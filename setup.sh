@@ -15,5 +15,5 @@ source .venv/bin/activate
 echo "Installing requirements..."
 pip install -r requirements.txt
 
-echo "Done! REMEMBER TO ACTIVATE VENV with "source .venv/bin/activate"
+echo "Done! REMEMBER TO ACTIVATE VENV with 'source .venv/bin/activate'"
 
