@@ -13,10 +13,10 @@ def fetch_apachejit(rootPath: str):
         filename = os.fsdecode(file)
         if "commit_links" in filename:
             df = pd.read_csv(rootPath + "/apachejit/data/" + filename)
-            df['project'] = df['project'].str.lower()
-            df['owner'] = 'apache'
+            df['project'] = "apache/" + df['project'].str.lower()
+            #df['owner'] = 'apache'
             df.rename(columns={'project':'repo'},  inplace=True)
-            df = df[['fix_hash', 'bug_hash', 'owner', 'repo']]
+            df = df[['fix_hash', 'bug_hash', 'repo']]
             
             dfList.append(df)
             totalRows += df.shape[0]
@@ -46,15 +46,16 @@ def fetch_icse2021(rootPath: str):
     for i in range(dataDF.shape[0]):
         # Since its json is just a bunch of dicts, not very readable :(
         fix_hash = dataDF['fix'].iloc[i]['commit']['hash']
-        [author, repo] = dataDF['repository'].iloc[i].split("/")
+        #[author, repo] = dataDF['repository'].iloc[i].split("/")
+        repo = dataDF['repository'].iloc[i]
 
         # iterate over all entries in the 'bugs' list, usually just one but worth it for when it isn't
         for b in range(len(dataDF.iloc[i]['bugs'])):
             bug_hash = dataDF.iloc[i]['bugs'][b]['commit']['hash']
-            rows.append((fix_hash, bug_hash, author, repo))
+            rows.append((fix_hash, bug_hash, repo))
             
             
-    df = pd.DataFrame(rows, columns=['fix_hash', 'bug_hash', 'owner', 'repo'])
+    df = pd.DataFrame(rows, columns=['fix_hash', 'bug_hash', 'repo'])
 
     return df
 
@@ -77,14 +78,6 @@ def main():
     rootPath = sys.argv[1]
 
     df = getAllPairs(rootPath)
-
-    # dfList = []
-
-    # dfList.append(fetch_icse2021(rootPath))
-    
-    # dfList.append(fetch_apachejit(rootPath))
-
-    # df = pd.concat(dfList, ignore_index=True)
 
     df.to_csv(sys.argv[2], index=False)
     
