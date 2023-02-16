@@ -2,39 +2,36 @@ import sys
 import ast
 import git
 from sklearn.preprocessing import OneHotEncoder
-import itertools
-
-
-all_node_types = []
-for name in dir(ast):
-    if not name.startswith('_'):
-        attr = getattr(ast, name)
-        if isinstance(attr, type) and issubclass(attr, ast.AST):
-            all_node_types.append(name)
-type_combinations = list(itertools.product(all_node_types, repeat=2))
 
 def get_file_contents(commit, file_path):
-    """
-    Return the contents of a file at a specific commit.
-    """
-    contents = commit.tree[file_path].data_stream.read().decode('utf-8')
-    return contents
+    return commit.tree[file_path].data_stream.read().decode('utf-8')
 
 def get_ast(contents):
-    """
-    Return the abstract syntax tree for the given file contents.
-    """
-    tree = ast.parse(contents)
-    return tree
+    return ast.parse(contents)
 
 def get_paths(tree):
-    """
-    Return a set of all unique paths in the given abstract syntax tree.
-    """
     paths = set()
-    for node in ast.walk(tree):
-        for child in ast.iter_child_nodes(node):
-            paths.add((type(node).__name__, type(child).__name__))
+
+    # Recursive function to explore the tree
+    def explore(node, path):
+        # Add current node to path
+        path.append(type(node).__name__)
+
+        # If the node has no children, it's a leaf node and the path is complete
+        if not list(ast.iter_child_nodes(node)):
+            paths.add(tuple(path))
+        else:
+            # Explore each child node recursively
+            for child in ast.iter_child_nodes(node):
+                explore(child, path)
+
+        # Remove current node from path before returning
+        path.pop()
+
+    # Start exploring from the root node
+    root = ast.parse("")
+    explore(tree, [])
+
     return paths
 
 if __name__ == '__main__':
@@ -96,8 +93,10 @@ if __name__ == '__main__':
     for path in unique_paths:
         print(path)
 
-    encoder = OneHotEncoder(categories=[all_node_types, all_node_types])
-    encoded_paths = encoder.fit_transform(list(unique_paths))
 
-    print("Encoded paths:")
-    print(encoded_paths.toarray())
+    all_node_types = []
+    for name in dir(ast):
+        if not name.startswith('_'):
+            attr = getattr(ast, name)
+            if isinstance(attr, type) and issubclass(attr, ast.AST):
+                all_node_types.append(name)
