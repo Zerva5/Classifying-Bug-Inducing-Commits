@@ -1,99 +1,103 @@
 import sys
-import os
 import ast
 import git
-import numpy as np
+from sklearn.preprocessing import OneHotEncoder
+import itertools
 
-# Define helper functions to extract method names and create abstract syntax trees
-def extract_method_names(node):
-    method_names = []
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, ast.FunctionDef):
-            method_names.append(child.name)
-        else:
-            method_names.extend(extract_method_names(child))
-    return method_names
 
-def create_ast(code):
-    try:
-        return ast.parse(code)
-    except SyntaxError:
-        return None
+all_node_types = []
+for name in dir(ast):
+    if not name.startswith('_'):
+        attr = getattr(ast, name)
+        if isinstance(attr, type) and issubclass(attr, ast.AST):
+            all_node_types.append(name)
+type_combinations = list(itertools.product(all_node_types, repeat=2))
 
-# Parse command line arguments
-if len(sys.argv) != 3:
-    print("Usage: python script.py <commit-sha> <path-to-repo>")
-    sys.exit(1)
-commit_sha = sys.argv[1]
-repo_path = sys.argv[2]
+def get_file_contents(commit, file_path):
+    """
+    Return the contents of a file at a specific commit.
+    """
+    contents = commit.tree[file_path].data_stream.read().decode('utf-8')
+    return contents
 
-# Clone the repository to a temporary directory
-temp_dir = os.path.join(os.getcwd(), 'temp')
-if os.path.isdir(temp_dir):
-    os.system(f'rm -rf {temp_dir}')
-os.makedirs(temp_dir)
-repo = git.Repo.clone_from(repo_path, temp_dir)
+def get_ast(contents):
+    """
+    Return the abstract syntax tree for the given file contents.
+    """
+    tree = ast.parse(contents)
+    return tree
 
-# Get the commit and its parent
-commit = repo.commit(commit_sha)
-parent_commit = commit.parents[0] if commit.parents else None
+def get_paths(tree):
+    """
+    Return a set of all unique paths in the given abstract syntax tree.
+    """
+    paths = set()
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            paths.add((type(node).__name__, type(child).__name__))
+    return paths
 
-# Initialize a dictionary to store method snapshots
-snapshots = {}
+if __name__ == '__main__':
 
-# Iterate over all changed files in the commit
-for diff in commit.diff(parent_commit):
-    # Ignore binary files and files that don't end with .py
-    if diff.a_blob is None or not diff.a_blob.path.endswith('.py'):
-        continue
+    if len(sys.argv) != 3:
+        print("Usage: python git_diff_to_vectors.py <commit_sha> <repo_path>")
+        sys.exit(1)
 
-    # Get the file contents before and after the commit
-    before_content = diff.a_blob.data_stream.read().decode()
-    after_content = diff.b_blob.data_stream.read().decode()
 
-    # Create abstract syntax trees for both versions of the file
-    before_ast = create_ast(before_content)
-    after_ast = create_ast(after_content)
+    commit_sha = sys.argv[1]
+    repo_path = sys.argv[2]
 
-    # Extract the names of all methods that have changed
-    if before_ast and after_ast:
-        before_names = set(extract_method_names(before_ast))
-        after_names = set(extract_method_names(after_ast))
-        changed_names = before_names.symmetric_difference(after_names)
+    print(f"Fetching repo at {repo_path}")
+    repo = git.Repo(repo_path)
+    print(f"Fetched repo at {repo_path}")
 
-        # Take a snapshot of each changed method
-        for name in changed_names:
-            if name not in snapshots:
-                snapshots[name] = []
-            snapshots[name].append(after_content)
+    commit = repo.commit(commit_sha)
+    print(f"Got commit {commit_sha}")
 
-# Compute the set of unique paths between each terminal of each tree
-contexts = set()
-for snapshot in snapshots.values():
-    for code in snapshot:
-        tree = create_ast(code)
-        if tree:
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Expr):
-                    context = []
-                    while node:
-                        if isinstance(node, ast.FunctionDef):
-                            context.append(node.name)
-                        elif isinstance(node, ast.ClassDef):
-                            context.append(node.name)
-                        elif isinstance(node, ast.Module):
-                            context.append('<module>')
-                        node = getattr(node, 'parent', None)
-                    contexts.add(tuple(context[::-1]))
+    changed_py_files = [diff.a_path for diff in commit.diff(commit.parents[0]) if diff.a_path.endswith('.py')]
 
-# Encode the set of contexts as a set of vectors using one-hot encoding
-unique_contexts = sorted(list(contexts))
-num_contexts = len(unique_contexts)
-context_vectors = np.zeros((num_contexts, num_contexts))
-for i, context in enumerate(unique_contexts):
-    for j, other_context in enumerate(unique_contexts):
-        if i != j and context[:-1] == other_context[:-1]:
-            context_vectors[i, j] = 1
+    print("Changed .py files in commit:")
+    for file in changed_py_files:
+        print(file)
 
-# Print the resulting context vectors
-print(context_vectors)
+    pre_commit_trees = []
+    post_commit_trees = []
+
+    for file_path in changed_py_files:
+        print(f"Getting file contents for {file_path} pre-commit")
+        pre_commit_contents = get_file_contents(commit.parents[0], file_path)
+        print(f"Got file contents for {file_path} pre-commit")
+
+        print(f"Building AST for {file_path} pre-commit")
+        pre_commit_tree = get_ast(pre_commit_contents)
+        pre_commit_trees.append(pre_commit_tree)
+        print(f"Built AST for {file_path} pre-commit")
+
+        print(f"Getting file contents for {file_path} post-commit")
+        post_commit_contents = get_file_contents(commit, file_path)
+        print(f"Got file contents for {file_path} post-commit")
+
+        print(f"Building AST for {file_path} post-commit")
+        post_commit_tree = get_ast(post_commit_contents)
+        post_commit_trees.append(post_commit_tree)
+        print(f"Built AST for {file_path} post-commit")
+
+    pre_commit_paths = set()
+    for tree in pre_commit_trees:
+        pre_commit_paths |= get_paths(tree)
+
+    post_commit_paths = set()
+    for tree in post_commit_trees:
+        post_commit_paths |= get_paths(tree)
+
+    unique_paths = pre_commit_paths.symmetric_difference(post_commit_paths)
+
+    print("Unique paths:")
+    for path in unique_paths:
+        print(path)
+
+    encoder = OneHotEncoder(categories=[all_node_types, all_node_types])
+    encoded_paths = encoder.fit_transform(list(unique_paths))
+
+    print("Encoded paths:")
+    print(encoded_paths.toarray())
