@@ -69,11 +69,10 @@ def getCommitData(namePrefix, cObj, g, row):
 
 def test(row):
     row['repo'] = 'NO'
-    
+
 
 def create_dataset(infilePath, g):
     pairDF = pd.read_csv(infilePath)
-
     
     noAuthor = 0
     noCommitter = 0
