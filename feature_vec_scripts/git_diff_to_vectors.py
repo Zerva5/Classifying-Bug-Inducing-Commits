@@ -1,7 +1,8 @@
 import sys
 import ast
 import git
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, MultiLabelBinarizer
+import numpy as np
 
 def get_file_contents(commit, file_path):
     return commit.tree[file_path].data_stream.read().decode('utf-8')
@@ -33,6 +34,8 @@ def get_paths(tree):
     explore(tree, [])
 
     return paths
+
+
 
 if __name__ == '__main__':
 
@@ -89,9 +92,9 @@ if __name__ == '__main__':
 
     unique_paths = pre_commit_paths.symmetric_difference(post_commit_paths)
 
-    print("Unique paths:")
-    for path in unique_paths:
-        print(path)
+    # print("Unique paths:")
+    # for path in unique_paths:
+    #     print(path)
 
 
     all_node_types = []
@@ -100,3 +103,44 @@ if __name__ == '__main__':
             attr = getattr(ast, name)
             if isinstance(attr, type) and issubclass(attr, ast.AST):
                 all_node_types.append(name)
+
+    max_num = len(all_node_types)
+
+    mapped_paths = []
+    for path in unique_paths:
+        mapped_path = []
+        for node in path:
+            index = all_node_types.index(node)
+            mapped_path.append(index + 1)
+        mapped_paths.append(mapped_path)
+
+    one_hot_paths = []
+    
+    # Iterate over each row in the array
+    for row in mapped_paths:
+        # Create an empty list to hold the one-hot encodings for this row
+        row_one_hot = []
+        
+        # Iterate over each element in the row
+        for num in row:
+            # Create an empty list to hold the one-hot encoding for this number
+            num_one_hot = [0] * (max_num+1)
+            
+            # Set the corresponding element to 1
+            num_one_hot[int(num)] = 1
+            
+            # Add the one-hot encoding for this number to the row's list
+            row_one_hot.append(num_one_hot)
+        
+        # Add the row's list of one-hot encodings to the main list
+        one_hot_paths.append(row_one_hot)
+
+    padded_one_hot_paths = []
+    
+    SET_PATH_LENGTH = 128
+
+    #Ensure each path is 128 in length
+    #Note this assumes the path is already less than 128
+    for path in one_hot_paths:
+        padded_path = [[0] * (max_num+1)] * (SET_PATH_LENGTH - len(path)) + path
+        padded_one_hot_paths.append(padded_path)
