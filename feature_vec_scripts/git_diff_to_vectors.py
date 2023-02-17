@@ -35,7 +35,7 @@ def get_paths(tree):
 
     return paths
 
-
+########################################## Processing and setup ##########################################
 
 if __name__ == '__main__':
 
@@ -60,6 +60,9 @@ if __name__ == '__main__':
     for file in changed_py_files:
         print(file)
 
+    ########################################## Compute Abstract Syntax Trees ##########################################
+
+
     pre_commit_trees = []
     post_commit_trees = []
 
@@ -82,6 +85,9 @@ if __name__ == '__main__':
         post_commit_trees.append(post_commit_tree)
         print(f"Built AST for {file_path} post-commit")
 
+    ########################################## Compute Bag of Contexts (paths) ##########################################
+
+
     pre_commit_paths = set()
     for tree in pre_commit_trees:
         pre_commit_paths |= get_paths(tree)
@@ -96,6 +102,7 @@ if __name__ == '__main__':
     # for path in unique_paths:
     #     print(path)
 
+    ########################################## Map Symbols to a number/index/id ##########################################
 
     all_node_types = []
     for name in dir(ast):
@@ -113,6 +120,29 @@ if __name__ == '__main__':
             index = all_node_types.index(node)
             mapped_path.append(index + 1)
         mapped_paths.append(mapped_path)
+
+    # print(mapped_paths)
+
+    ########################################## Compute Bag of words encoding ##########################################
+
+    # from sklearn.preprocessing import MultiLabelBinarizer
+
+    # # Create the MultiLabelBinarizer object
+    # mlb = MultiLabelBinarizer()
+
+    # # Fit the object on the mapped paths
+    # mlb.fit(mapped_paths)
+
+    # # Transform the mapped paths into a binary matrix
+    # binary_matrix = mlb.transform(mapped_paths)
+
+    # # Sum the binary matrix along axis 0 to get a bag of words representation
+    # bag_of_words = np.sum(binary_matrix, axis=0)
+
+    # print(len(bag_of_words))
+
+
+    ########################################## Convert to One-Hot Encoding ##########################################
 
     one_hot_paths = []
     
@@ -135,12 +165,15 @@ if __name__ == '__main__':
         # Add the row's list of one-hot encodings to the main list
         one_hot_paths.append(row_one_hot)
 
+
+    # print(one_hot_paths)
+
+    ########################################## Pad to a fixed length ##########################################
+
     padded_one_hot_paths = []
     
-    SET_PATH_LENGTH = 128
+    SET_PATH_LENGTH = 32
 
-    #Ensure each path is 128 in length
-    #Note this assumes the path is already less than 128
     for path in one_hot_paths:
-        padded_path = [[0] * (max_num+1)] * (SET_PATH_LENGTH - len(path)) + path
+        padded_path = [[0] * (max_num+1)] * max(SET_PATH_LENGTH - len(path), 0) + path[-SET_PATH_LENGTH:]
         padded_one_hot_paths.append(padded_path)
