@@ -42,4 +42,4 @@ def create_dataset(path, size=32, threshold=50):
 
     d=150
 
-    return X_train, y_train, input_dim, output_dim, X, P, d, Y
+    return X_train, y_train, X, P, d, Y, input_dim, output_dim

@@ -8,107 +8,134 @@ from create_dataset import create_dataset
 from tensorflow.keras.optimizers import Adam
 import tensorflow as tf
 import random
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Input, Dense, LSTM, Attention, Concatenate, Layer, Embedding
 from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Model
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 
-X_train, y_train, input_dim, output_dim, X, P, d, Y = create_dataset(sys.argv[1], 128)
+X_train, y_train, X, P, d, Y, _, _ = create_dataset(sys.argv[1], 12)
 X_train, X_test, y_train, y_test = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
 
-path_vocab = np.random.randn(len(P), d)
-value_vocab = np.random.randn(len(X), d)
-W = np.random.randn(d, 3*d)
-attention_vector = np.random.randn(d)
-
-path_vocab = tf.Variable(path_vocab)
-value_vocab = tf.Variable(value_vocab)
-W = tf.Variable(W)
-attention_vector = tf.Variable(attention_vector)
-
-# Define a dense layer to converge code vector into a single prediction
-dense_layer = Dense(1, activation='softmax')
-
-# Define the forward pass
-def forward_pass(path_contexts):
-    
-    # Map each path-context to its corresponding embedding
-    context_vectors = []
-    for path_context in path_contexts:
-        pj = path_context
-        xs = path_context[0]
-        xt = path_context[-1]
-
-        xs_embedding = value_vocab[xs]
-        pj_embedding = path_vocab[P.index(pj)]
-        xt_embedding = value_vocab[xs] 
-
-        context_vector = tf.concat([xs_embedding, pj_embedding, xt_embedding], axis=0)
-        context_vectors.append(context_vector)
-
-    # Combine context vectors using fully connected layer
-    # context_weights = tf.matmul(context_vectors, W)
-    context_weights = tf.matmul(context_vectors, tf.transpose(W))
-
-    combined_context_vectors = tf.nn.tanh(context_weights)
-
-    # Compute attention weights
-    attention_weights = tf.nn.softmax(tf.matmul(combined_context_vectors, tf.expand_dims(attention_vector, axis=1)), axis=0)
-    
-    # Aggregate into code vector using attention
-    code_vector = tf.reduce_sum(tf.multiply(combined_context_vectors, attention_weights), axis=0)
-    
-    return code_vector
+X_train = pad_sequences(X_train)
+X_test = pad_sequences(X_test)
 
 
-def train(X_train, Y_train, forward_pass, epochs, learning_rate):
-    
-    # Define the optimizer
-    optimizer = Adam(learning_rate=learning_rate)
 
-    # Iterate over the epochs
-    for epoch in range(epochs):
+
+class AttentionCodeVectorizer(tf.keras.layers.Layer):
+    def __init__(self, input_dim, output_dim):
+        super(AttentionCodeVectorizer, self).__init__()
+        self.path_vocab = self.add_weight(name='path_vocab', shape=(len(P), d), initializer='random_normal')
+        self.value_vocab = self.add_weight(name='value_vocab', shape=(len(X), d), initializer='random_normal')
+        self.W = self.add_weight(name='W', shape=(d, 3*d), initializer='random_normal')
+        self.attention_vector = self.add_weight(name='attention_vector', shape=(d,), initializer='random_normal')
+        self.dense_layer = tf.keras.layers.Dense(output_dim, activation='sigmoid')
+
+    def call(self, inputs):
+        path_contexts = inputs
+        context_vectors = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+        for i in tf.range(tf.shape(path_contexts)[0]):
+            path_context = path_contexts[i]
+            pj = path_context
+            xs = tf.cast(path_context[0], tf.int32)
+            xt = tf.cast(path_context[-1], tf.int32)
+            xs_embedding = tf.gather(self.value_vocab, xs)
+            pj_set = tf.sets.intersection(tf.expand_dims(tf.cast(P, path_context.dtype), axis=0),
+                                           tf.expand_dims(tf.cast(pj, path_context.dtype), axis=0))
+            pj_values = tf.sparse.to_dense(pj_set)[0]
+            pj_indices = tf.where(tf.equal(tf.cast(P, path_context.dtype), pj_values))
+            pj_index = pj_indices[0, 0]  # Get the index of the first occurrence of pj in P
+            pj_embedding = tf.gather(self.path_vocab, pj_index)
+            xt_embedding = tf.gather(self.value_vocab, xt) 
+
+            context_vector = tf.concat([xs_embedding, pj_embedding, xt_embedding], axis=0)
+            context_vectors = context_vectors.write(i, context_vector)
+
+        context_vectors = context_vectors.stack()
+
+        # Combine context vectors using fully connected layer
+        context_weights = tf.matmul(context_vectors, tf.transpose(self.W))
+        combined_context_vectors = tf.nn.tanh(context_weights)
+
+        # Compute attention weights
+        attention_weights = tf.nn.softmax(tf.matmul(combined_context_vectors, tf.expand_dims(self.attention_vector, axis=1)), axis=0)
         
-        # Shuffle the training data
-        indices = list(range(len(X_train)))
-        random.shuffle(indices)
-        X_train = [X_train[i] for i in indices]
-        Y_train = [Y_train[i] for i in indices]
+        # Aggregate into code vector using attention
+        code_vector = tf.reduce_sum(tf.multiply(combined_context_vectors, attention_weights), axis=0)
 
-        # Iterate over the training examples
-        for i in range(len(X_train)):
-            
-            # Get the current example
-            x = X_train[i]
-            y = Y_train[i]
+        # Reshape the code vector to have at least two dimensions
+        code_vector = tf.reshape(code_vector, (1, -1))
 
-            with tf.GradientTape() as tape:
+        # Pass the code vector through a Dense layer for binary classification
+        output = self.dense_layer(code_vector)
 
-                # Perform the forward pass
-                code_vector = forward_pass(x)
+        return output
 
-                # Apply the dense layer to converge code vector into a single prediction
-                code_prediction = dense_layer(tf.expand_dims(code_vector, 0))
 
-                # loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=code_prediction))
-                loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=tf.reshape(y, (1, 1)), logits=code_prediction))
+input_layer = tf.keras.layers.Input(shape=(None,))
+code_vector = AttentionCodeVectorizer(len(P), d)(input_layer)
+output_layer = tf.keras.layers.Dense(1, activation='sigmoid')(code_vector)
+model = tf.keras.Model(inputs=input_layer, outputs=output_layer)
+model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.fit(X_train.tolist(), y_train, batch_size=32, epochs=10)
 
-                # Compute gradients
-                grads = tape.gradient(loss, [path_vocab, value_vocab, W, attention_vector])
 
-                # Apply gradients
-                optimizer.apply_gradients(zip(grads, [path_vocab, value_vocab, W, attention_vector]))
+###############
 
-    return path_vocab, value_vocab, W, attention_vector
 
-            
 
-path_vocab, value_vocab, W, attention_vector = train(X_train, y_train, forward_pass, epochs=10, learning_rate=0.001)
+# path_vocab = tf.Variable(np.random.randn(len(P), d))
+# value_vocab = tf.Variable(np.random.randn(len(X), d))
+# W = tf.Variable(np.random.randn(d, 3*d))
+# attention_vector = tf.Variable(np.random.randn(d))
 
-y_pred = []
-for x in X_test:
-    code_vector = forward_pass(x)
-    code_prediction = dense_layer(tf.expand_dims(code_vector, 0))
-    y_pred.append(code_prediction.numpy()[0][0])
-y_pred = np.array(y_pred)
-y_true = np.array(y_test)
-accuracy = np.mean(y_pred == y_true)
-print("Accuracy:", accuracy)
+
+# @tf.function
+# def compute_attention_code_vector(path_contexts):
+#     # Map each path-context to its corresponding embedding
+#     context_vectors = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+#     for i in tf.range(tf.shape(path_contexts)[0]):
+#         path_context = path_contexts[i]
+#         pj = path_context
+#         xs = tf.cast(path_context[0], tf.int32)
+#         xt = tf.cast(path_context[-1], tf.int32)
+
+#         xs_embedding = tf.gather(value_vocab, xs)
+#         pj_embedding = tf.gather(path_vocab, tf.where(tf.equal(tf.cast(P, tf.float32), pj))[0][0])
+#         xt_embedding = tf.gather(value_vocab, xt) 
+
+#         context_vector = tf.concat([xs_embedding, pj_embedding, xt_embedding], axis=0)
+#         context_vectors = context_vectors.write(i, context_vector)
+
+#     context_vectors = context_vectors.stack()
+
+#     # Combine context vectors using fully connected layer
+#     context_weights = tf.matmul(context_vectors, tf.transpose(tf.cast(W, tf.float32)))
+#     combined_context_vectors = tf.nn.tanh(context_weights)
+
+#     # Compute attention weights
+#     attention_weights = tf.nn.softmax(tf.matmul(combined_context_vectors, tf.expand_dims(tf.cast(attention_vector, tf.float32), axis=1)), axis=0)
+    
+#     # Aggregate into code vector using attention
+#     code_vector = tf.reduce_sum(tf.multiply(combined_context_vectors, attention_weights), axis=0)
+    
+#     return code_vector
+
+
+# # define the input shape for your variable-length array
+# input_shape = (None,)
+
+# # create your model
+# model = tf.keras.models.Sequential()
+
+# # add an attention layer to compute the code vector
+# model.add(tf.keras.layers.Lambda(compute_attention_code_vector, input_shape=input_shape))
+
+# # add a dense layer for binary classification
+# model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
+
+# # compile the model with binary cross-entropy loss
+# model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+# # train the model
+# model.fit(X_train, y_train, validation_data=(X_test, y_test), epochs=10, batch_size=32)
