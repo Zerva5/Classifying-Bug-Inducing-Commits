@@ -121,8 +121,10 @@ def process_commit(commit_sha, repo_path):
     
     SET_PATH_LENGTH = 32
 
-    for path in one_hot_paths:
-        padded_path = [[0] * (max_num+1)] * max(SET_PATH_LENGTH - len(path), 0) + path[-SET_PATH_LENGTH:]
+    # for path in one_hot_paths:
+    for path in mapped_paths:
+        # padded_path = [[0] * (max_num+1)] * max(SET_PATH_LENGTH - len(path), 0) + path[-SET_PATH_LENGTH:]
+        padded_path = [0] * max(SET_PATH_LENGTH - len(path), 0) + path[-SET_PATH_LENGTH:]
         padded_one_hot_paths.append(padded_path)
     
     return padded_one_hot_paths
