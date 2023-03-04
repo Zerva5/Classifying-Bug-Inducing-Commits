@@ -40,12 +40,7 @@ class AttentionCodeVectorizer(tf.keras.layers.Layer):
             xs = tf.cast(path_context[0], tf.int32)
             xt = tf.cast(path_context[-1], tf.int32)
             xs_embedding = tf.gather(self.value_vocab, xs)
-            pj_set = tf.sets.intersection(tf.expand_dims(tf.cast(P, path_context.dtype), axis=0),
-                                           tf.expand_dims(tf.cast(pj, path_context.dtype), axis=0))
-            pj_values = tf.sparse.to_dense(pj_set)[0]
-            pj_indices = tf.where(tf.equal(tf.cast(P, path_context.dtype), pj_values))
-            pj_index = pj_indices[0, 0]  # Get the index of the first occurrence of pj in P
-            pj_embedding = tf.gather(self.path_vocab, pj_index)
+            pj_embedding = self.path_vocab[P.index(pj)]
             xt_embedding = tf.gather(self.value_vocab, xt) 
 
             context_vector = tf.concat([xs_embedding, pj_embedding, xt_embedding], axis=0)
