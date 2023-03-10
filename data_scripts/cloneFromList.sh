@@ -16,7 +16,7 @@ if [ ! -f "$filename" ]; then
 fi
 
 # Create the 'repos' directory if it doesn't exist
-if [ ! -d "repos" ]; then
+if [ ! -d "commit_repos" ]; then
   mkdir repos
 fi
 
@@ -27,6 +27,6 @@ while read line; do
     repo_name=$(echo $line | awk -F/ '{print $NF}' | awk -F. '{print $1}')
 
     # Clone the repository into a directory with the author and name
-    git clone $line "data/repos/$repo_author>$repo_name"
+    git clone $line "data/commit_repos/$repo_author:$repo_name"
 
 done < $filename
