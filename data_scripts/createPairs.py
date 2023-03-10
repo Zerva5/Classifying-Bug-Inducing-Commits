@@ -23,8 +23,6 @@ def fetch_apachejit(rootPath: str):
             dfList.append(df)
             totalRows += df.shape[0]
 
-    #print(dfList[0])
-    #print(totalRows)
     df = pd.concat(dfList, ignore_index=True)
     df['Y'] = 1
     return df
@@ -34,19 +32,9 @@ def fetch_icse2021(rootPath: str):
 
     dataDF = pd.read_json(dataDirPath + "overall.json")
 
-
-    #print(dataDF.columns)
-    #print(dataDF.iloc[3]['bugs'])
-
-
-    # for each fix there will be bugs.
-    # Will need to go through each row and
-
-    #df['fix'].iloc[0]['commit']['hash']
-
     rows = []
 
-    for i in range(dataDF.shape[0]):
+    for i, _ in dataDF.iterrows():
         # Since its json is just a bunch of dicts, not very readable :(
         fix_hash = dataDF['fix'].iloc[i]['commit']['hash']
         #[author, repo] = dataDF['repository'].iloc[i].split("/")
@@ -76,6 +64,17 @@ def getAllPairs(rootPath):
 
     return df
 
+def fillRow(pairs, rInd, iInd, classification):
+    row = {}
+    row["fix_hash"] = pairs.iloc[iInd]['fix_hash']
+    row['fix_repo'] = pairs.iloc[iInd]['repo']
+    row["bug_hash"] = pairs.iloc[rInd]['bug_hash']
+    row['bug_repo'] = pairs.iloc[rInd]['repo']
+    
+    row['Y'] = classification
+
+    return row
+
 def negativeRandom(pairs, n):
     numPairs = pairs.shape[0]
 
@@ -91,12 +90,8 @@ def negativeRandom(pairs, n):
         for r in range(n):
             row = {}
             rIndex = random.choice([x for x in range(numPairs) if x != i and x not in usedIndexes])
-            
-            row["fix_hash"] = fixSha
-            row["bug_hash"] = pairs.iloc[rIndex]['bug_hash']
-            row['Y'] = 0
 
-            newRows.append(row)
+            newRows.append(fillRow(pairs, rIndex, i, 0))
 
         newDF = pd.DataFrame(newRows)
         dfList.append(newDF)
@@ -107,56 +102,51 @@ def negativeRandom(pairs, n):
 
 def getRandomBugFromList(p, li):
     pass
-    
 
-def negativeRandomSameRepo(pairs, n):
-    numPairs = pairs.shape[0]
 
+def negativeRandomSameRepo(pairs, searchPairs, n):
     dfList = []
+    repoGroups = {}     ## To cache the dataframes that are of the same repo
 
-    for i in range(numPairs):
+    for i, row in pairs.iterrows():
         tempn = n
         newRows = []
-        fixSha = pairs.iloc[i]['fix_hash']
-
+        
         usedIndexes = []
 
-        selectPairs = pairs[(pairs["repo"] == pairs.iloc[i]['repo']) & (pairs['fix_hash'] != pairs.iloc[i]['fix_hash']) & (pairs['bug_hash'] != pairs.iloc[i]['bug_hash'])]
+        i_fixHash = row['fix_hash']
+        i_repo = row['repo']
+        i_bugHash =  row['bug_hash']
 
+        # If we haven't selected the subset of rows for a given repo then cache them
+        if i_repo not in repoGroups:
+            repoGroups[i_repo] = searchPairs[(searchPairs["repo"] == i_repo)]
 
-        # if(selectPairs.shape[0] > 0):
-        #     print("before", tempn)
+        selectPairs = repoGroups[i_repo].loc[(searchPairs['fix_hash'] != i_fixHash) & (searchPairs['bug_hash'] != i_bugHash)]
 
+        # if there aren't enough valid options to choose n things from then reduce n
         if(selectPairs.shape[0] < n):
             tempn = selectPairs.shape[0]
-            
-        # if(selectPairs.shape[0] > 0):
-        #     print(selectPairs.shape[0], tempn)
-
 
         for r in range(tempn):
-            row = {}
 
-            rIndex = random.choice([x for x in range(selectPairs.shape[0]) if x not in usedIndexes])
+            # Select random index from our valid pairs
+            rIndex = random.choice(selectPairs.index)
 
-            row["fix_hash"] = fixSha
-            row["bug_hash"] = selectPairs.iloc[rIndex]['bug_hash']
-            row['Y'] = 0
+            newRows.append(fillRow(searchPairs, rIndex, i, 0))
 
-            #print(row)
-            newRows.append(row)
-
+        # Create a dataframe from these new rows and then append that df to a list, one df per "good pair"
         newDF = pd.DataFrame(newRows)
         dfList.append(newDF)
 
+    #concat the whole thing together
     df = pd.concat(dfList)
-
 
     return df
     
             
 
-def createNegativeExamples(pairs, maxNegatives):
+def createNegativeExamples(pairs, searchPairs, maxNegatives):
     # Find the n closest commits either ahead or behind the correct commit that edit at least one of the same files as the correct commit
     # Find other commits that we know are bug fixing and edit the same files as the correct commit but are not the correct commit.
     # Commits made after the bug fixing commit
@@ -164,7 +154,11 @@ def createNegativeExamples(pairs, maxNegatives):
     # Commits that are not the same repo
     # Be interesting to see how many bug fixing commits don't reference files in the bug creating commit
     #print(pairs)
-    return pd.concat((pairs, negativeRandomSameRepo(pairs, maxNegatives)))
+    df = pd.concat((pairs, negativeRandomSameRepo(pairs, searchPairs, maxNegatives)))
+
+    df = df.drop('repo', axis=1).drop('index', axis=1) # get rid of un needed columns
+
+    return df
 
     # first thing is just going to be getting n random 
 
@@ -178,12 +172,17 @@ def main():
     outputName = sys.argv[2]
 
     #df = getAllPairs(rootPath).head(20000).sample(frac=1, random_state=1).reset_index()
-    df = fetch_apachejit(rootPath).head(numSamples) 
-    df = df.sample(frac=1, random_state=1).reset_index()  # shuffle dataframe
+    df = fetch_apachejit(rootPath).sample(frac=1, random_state=1).reset_index() # fetch and shuffle
+    df['bug_repo'] = df.loc[:, 'repo']
+    df['fix_repo'] = df.loc[:, 'repo']
+    
+    allSamples = df.head(numSamples * 2)
+    
+    df = df.head(numSamples) # limit number 
 
     print("positive examples:", df.shape[0])
 
-    withNegative = createNegativeExamples(df, numNegatives)
+    withNegative = createNegativeExamples(df, allSamples, numNegatives)
 
     print("negative examples:", withNegative.shape[0] - df.shape[0])
     print("total examples:", withNegative.shape[0])
