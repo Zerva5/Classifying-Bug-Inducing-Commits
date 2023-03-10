@@ -156,7 +156,7 @@ def negativeRandomSameRepo(pairs, n):
     
             
 
-def createNegativeExamples(pairs):
+def createNegativeExamples(pairs, maxNegatives):
     # Find the n closest commits either ahead or behind the correct commit that edit at least one of the same files as the correct commit
     # Find other commits that we know are bug fixing and edit the same files as the correct commit but are not the correct commit.
     # Commits made after the bug fixing commit
@@ -164,30 +164,34 @@ def createNegativeExamples(pairs):
     # Commits that are not the same repo
     # Be interesting to see how many bug fixing commits don't reference files in the bug creating commit
     #print(pairs)
-    return pd.concat((pairs, negativeRandomSameRepo(pairs, 2)))
+    return pd.concat((pairs, negativeRandomSameRepo(pairs, maxNegatives)))
 
     # first thing is just going to be getting n random 
 
 def main():
-    if(len(sys.argv) != 3):
-        raise Exception("Not enough arguments, USAGE: python createPairs.py DATAFOLDER OUTPUTPATH")
+    if(len(sys.argv) != 5):
+        raise Exception("Wrong number of arguments, USAGE: python createPairs.py DATAFOLDER OUTPUTPATH numSamples negativesPerSample")
 
-
+    numSamples = int(sys.argv[3])
+    numNegatives = int(sys.argv[4])
     rootPath = sys.argv[1]
-    outputPath = sys.argv[2]
+    outputName = sys.argv[2]
 
     #df = getAllPairs(rootPath).head(20000).sample(frac=1, random_state=1).reset_index()
-    df = fetch_apachejit(rootPath).head(1000) 
+    df = fetch_apachejit(rootPath).head(numSamples) 
     df = df.sample(frac=1, random_state=1).reset_index()  # shuffle dataframe
 
     print("positive examples:", df.shape[0])
 
-    withNegative = createNegativeExamples(df)
+    withNegative = createNegativeExamples(df, numNegatives)
 
     print("negative examples:", withNegative.shape[0] - df.shape[0])
     print("total examples:", withNegative.shape[0])
+
+    if not os.path.exists(os.path.join(rootPath, "pairs_output")):
+        os.makedirs(os.path.join(rootPath, "pairs_output"))
     
-    withNegative.to_csv(outputPath, index=False)
+    withNegative.to_csv(os.path.join(rootPath, "pairs_output", outputName), index=False)
 
 
 
