@@ -13,7 +13,7 @@ echo "Activating .venv"
 source .venv/bin/activate
 
 echo "Installing requirements..."
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 
 echo "Setting up 'data' directory"
 echo "Creating 'data' directory if not already there"
