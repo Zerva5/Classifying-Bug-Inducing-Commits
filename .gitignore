@@ -9,3 +9,5 @@ data_scripts/gh_access_token.txt
 **/__pycache__
 clones/
 gh_access_token.txt
+
+data/
