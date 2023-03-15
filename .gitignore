@@ -4,6 +4,7 @@
 \.#*
 
 *.csv
+!all_pairs.csv
 
 data_scripts/gh_access_token.txt
 **/__pycache__
