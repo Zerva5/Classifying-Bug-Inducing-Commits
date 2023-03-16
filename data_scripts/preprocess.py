@@ -63,7 +63,7 @@ ALL_NODE_INDEXES = range(MAX_NODE_LOOKUP_NUM)
 
 RAW_DATA = pd.read_csv("../data/all_apache_commits.csv")
 
-RAW_DATA = RAW_DATA.loc[RAW_DATA['diff_line_count'] <= 75]
+RAW_DATA = RAW_DATA.loc[RAW_DATA['diff_line_count'] <= 50]
 RAW_DATA = RAW_DATA.loc[RAW_DATA['files_changed'] <= 8]
 
 
@@ -555,6 +555,7 @@ class Commit:
 print("Total commits found", len(RAW_DATA))
 DATA_SLICE = [5000,5250]
 
+
 RAW_DATA_SLICE = RAW_DATA.iloc[DATA_SLICE[0]: DATA_SLICE[1]]
 
 
@@ -627,14 +628,14 @@ with open('../data/commit_lookups/commit_data_lookup' + str(DATA_SLICE[0]) + "-"
     pickle.dump(COMMIT_DATA_LOOKUP, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-bs = [len(COMMIT_DATA_LOOKUP[x].bag_of_contexts) for x in COMMIT_DATA_LOOKUP]
-bs_nonzero = [x for x in bs if x > 0]
-print("Bag Sizes:")
-print("All:", bs)
-print(f"Non-zero Median: {np.median(bs_nonzero)}, Non-zero Mean: {np.mean(bs_nonzero)}")
+# bs = [len(COMMIT_DATA_LOOKUP[x].bag_of_contexts) for x in COMMIT_DATA_LOOKUP]
+# bs_nonzero = [x for x in bs if x > 0]
+# print("Bag Sizes:")
+# print("All:", bs)
+# print(f"Non-zero Median: {np.median(bs_nonzero)}, Non-zero Mean: {np.mean(bs_nonzero)}")
 
-fc = [len(COMMIT_DATA_LOOKUP[x].get_files_changed()) for x in COMMIT_DATA_LOOKUP]
-fc_nonzero = [x for x in fc if x > 0]
-print("Files Changed per commit:")
-print("All:", fc)
-print(f"Non-zero Median: {np.median(fc_nonzero)}, Non-zero Mean: {np.mean(fc_nonzero)}")
+# fc = [len(COMMIT_DATA_LOOKUP[x].get_files_changed()) for x in COMMIT_DATA_LOOKUP]
+# fc_nonzero = [x for x in fc if x > 0]
+# print("Files Changed per commit:")
+# print("All:", fc)
+# print(f"Non-zero Median: {np.median(fc_nonzero)}, Non-zero Mean: {np.mean(fc_nonzero)}")
