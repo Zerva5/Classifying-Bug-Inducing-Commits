@@ -553,7 +553,8 @@ class Commit:
 
 
 print("Total commits found", len(RAW_DATA))
-DATA_SLICE = [5000,5250]
+#DATA_SLICE = [len(RAW_DATA) - 1000, len(RAW_DATA)]
+DATA_SLICE = [0,100]
 
 
 RAW_DATA_SLICE = RAW_DATA.iloc[DATA_SLICE[0]: DATA_SLICE[1]]
@@ -575,10 +576,6 @@ def _to_commit_mp(pair):
     try:
         sha = pair[0]
         repo = pair[1]
-        #print(repo)
-        #raise ValueError("blah")
-        
-        # print(repo, sha)
 
         commit = Commit(sha, f"../clones/{repo}")
         commit._populate_commit_info()  
@@ -589,10 +586,10 @@ def _to_commit_mp(pair):
 
     return commit
 
-def create_lookup_mp(pairs):
+def create_lookup_mp(pairs, data_slice):
     results = []
     
-    pool = multiprocessing.Pool(processes=4)
+    pool = multiprocessing.Pool(processes=8)
 
     print("APPENDING JOBS...")
     for pair in pairs:
@@ -607,6 +604,8 @@ def create_lookup_mp(pairs):
     errorList = []
     num_finished = 0
     num_errors = 0
+    num_saved = 0
+    save_step = 10
     for i, result in tqdm(enumerate(results), desc="Processing commit", total=len(results)):
         c = result.get()
         if type(c) == str:
@@ -615,17 +614,41 @@ def create_lookup_mp(pairs):
             errorList.append(pairs[i])
         else:
             final_results[c.sha] = c
+
+            ## Need to save the subslice to a pickle and clear final_results
+            if(num_finished == save_step):
+                
+                
+                with open('../data/commit_lookups/commit_data_lookup' +
+                          str(DATA_SLICE[0] + (save_step * (num_saved))) + "-" + str(DATA_SLICE[0] + (save_step * (num_saved + 1))) +
+                          '.pickle', 'wb') as file:
+                    pickle.dump(final_results, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+                final_results = {}
+
+                num_saved += 1
+                num_finished = 0
+
+                
+                
             
         num_finished += 1   
 
+    
+    with open('../data/commit_lookups/commit_data_lookup' +
+              str(DATA_SLICE[0] + (save_step * (num_saved))) + "-" + str(DATA_SLICE[1]) +
+              '.pickle', 'wb') as file:
+        pickle.dump(final_results, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+        
     pool.close()
     return final_results
 
-COMMIT_DATA_LOOKUP = create_lookup_mp(TUPLES)
+COMMIT_DATA_LOOKUP = create_lookup_mp(TUPLES, DATA_SLICE)
 print("DONE PROCESING COMMITS")
 
-with open('../data/commit_lookups/commit_data_lookup' + str(DATA_SLICE[0]) + "-" + str(DATA_SLICE[1]) + '.pickle', 'wb') as file:
-    pickle.dump(COMMIT_DATA_LOOKUP, file, protocol=pickle.HIGHEST_PROTOCOL)
+# with open('../data/commit_lookups/commit_data_lookup' + str(DATA_SLICE[0]) + "-" + str(DATA_SLICE[1]) + '.pickle', 'wb') as file:
+#     pickle.dump(COMMIT_DATA_LOOKUP, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 # bs = [len(COMMIT_DATA_LOOKUP[x].bag_of_contexts) for x in COMMIT_DATA_LOOKUP]
