@@ -5,10 +5,14 @@ cd ../clones
 
 # Initialize an empty file for the results
 output_file="../data/all_apache_commits.csv"
-echo "Repo, Commit SHA, Java Files Changed, Total Diff Lines" > "$output_file"
+echo "repo,sha,files_changed,diff_line_count" > "$output_file"
 
 # Loop through all the subdirectories
 for repo in */; do
+	if [[ "$repo" == "apache-activemq/" || "$repo" == "apache-cassandra/" || "$repo" == "apache-groovy/" || "$repo" == "apache-hbase/" || "$repo" == "apache-ignite/" || "$repo" == "apache-spark/" || "$repo" == "apache-zookeeper/" || "$repo" == "apache-camel/" || "$repo" == "apache-flink/" || "$repo" == "apache-hadoop/" || "$repo" == "apache-hive/" || "$repo" == "apache-kafka/" || "$repo" == "apache-zeppelin/" ]]; then
+		continue
+	fi
+
 	echo "Processing $repo"
 	cd "$repo"
 
@@ -27,10 +31,9 @@ for repo in */; do
 			# Get the total diff lines for the Java files
 			total_diff_lines=$(git show "$commit" -- "*.java" | grep '^[-+][^-+]' | wc -l)
 
-			# Check if the total diff lines are less than 100
 			if [ "$total_diff_lines" -lt 250 ]; then
 				# Save the result for this commit
-				echo "${repo%/}, $commit, $java_changes, $total_diff_lines" >> "../$output_file"
+				echo "${repo%/},$commit,$java_changes,$total_diff_lines" >> "../$output_file"
 			fi
 		fi
 	}
