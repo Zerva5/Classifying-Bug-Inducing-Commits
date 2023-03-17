@@ -35,17 +35,26 @@ def fetch_icse2021(rootPath: str):
     rows = []
 
     for i, _ in dataDF.iterrows():
-        # Since its json is just a bunch of dicts, not very readable :(
         fix_hash = dataDF['fix'].iloc[i]['commit']['hash']
-        #[author, repo] = dataDF['repository'].iloc[i].split("/")
         repo = dataDF['repository'].iloc[i]
 
-        # iterate over all entries in the 'bugs' list, usually just one but worth it for when it isn't
+        # Check if there is at least one Java file in the fix commit
+        fix_has_java = any(file['lang'] == 'java' for file in dataDF['fix'].iloc[i]['files'])
+
+        if not fix_has_java:
+            continue
+
         for b in range(len(dataDF.iloc[i]['bugs'])):
             bug_hash = dataDF.iloc[i]['bugs'][b]['commit']['hash']
+
+            # Check if there is at least one Java file in the bug commit
+            bug_has_java = any(file['lang'] == 'java' for file in dataDF.iloc[i]['bugs'][b]['files'])
+
+            if not bug_has_java:
+                continue
+
             rows.append((fix_hash, bug_hash, repo))
-            
-            
+
     df = pd.DataFrame(rows, columns=['fix_hash', 'bug_hash', 'repo'])
 
     df['Y'] = 1
@@ -55,9 +64,9 @@ def fetch_icse2021(rootPath: str):
 def getAllPairs(rootPath):
     dfList = []
 
-    #dfList.append(fetch_icse2021(rootPath))
+    dfList.append(fetch_icse2021(rootPath))
     
-    dfList.append(fetch_apachejit(rootPath))
+    # dfList.append(fetch_apachejit(rootPath))
 
     df = pd.concat(dfList, ignore_index=True)
     df['Y'] = 1
@@ -171,8 +180,8 @@ def main():
     rootPath = sys.argv[1]
     outputName = sys.argv[2]
 
-    #df = getAllPairs(rootPath).head(20000).sample(frac=1, random_state=1).reset_index()
-    df = fetch_apachejit(rootPath).sample(frac=1, random_state=1).reset_index() # fetch and shuffle
+    df = getAllPairs(rootPath).head(20000).sample(frac=1, random_state=1).reset_index()
+    # df = fetch_apachejit(rootPath).sample(frac=1, random_state=1).reset_index() # fetch and shuffle
     df['bug_repo'] = df.loc[:, 'repo']
     df['fix_repo'] = df.loc[:, 'repo']
     
