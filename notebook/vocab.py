@@ -2,7 +2,7 @@ from tree_sitter import Language
 import json
 import requests
 
-JAVA_LANGUAGE = Language('ast-bindings/build/ast.so', 'java')
+JAVA_LANGUAGE = Language('../ast-bindings/build/ast.so', 'java')
 
 def download_json_data(lang):
     url = f"https://raw.githubusercontent.com/tree-sitter/tree-sitter-{lang}/master/src/node-types.json"

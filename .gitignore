@@ -5,6 +5,7 @@
 
 *.csv
 !all_pairs.csv
+!notebook/*.csv
 
 data_scripts/gh_access_token.txt
 **/__pycache__

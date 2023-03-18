@@ -131,7 +131,7 @@ def CommitDiffModelFactory(
 
     class CommitDiffModel:
         def __init__(self):
-            self.input_shape = INPUT_SHAPE
+            self.input_shape = (BAG_SIZE, CONTEXT_SIZE)
             self.example_size = BAG_SIZE
             self.context_size = CONTEXT_SIZE
             self.fixed_vector_size = OUTPUT_SIZE
@@ -404,7 +404,7 @@ def CommitDiffModelFactory(
             # Create binary classification model
             name_input = Input(shape=(1,))
             timestamp_input = Input(shape=(1,))
-            message_input = Input(shape=(1,))
+            message_input = Input(shape=(3,))
             bag1_input = Input(shape=self.input_shape)
             bag2_input = Input(shape=self.input_shape)
             
