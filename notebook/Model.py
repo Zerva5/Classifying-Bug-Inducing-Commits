@@ -15,7 +15,7 @@ from tensorflow.keras.layers import (
     Dropout, Conv1D, Conv2D, Bidirectional, GRU, ConvLSTM2D, Flatten, Permute, GlobalAveragePooling1D, GlobalAveragePooling2D
 )
 
-from vocab import JAVA_LANGUAGE, FILE_FILTERS, ALL_NODE_TYPES, ALL_NODE_INDEXES, MAX_NODE_LOOKUP_NUM
+from vocab import MAX_NODE_LOOKUP_NUM
 
 
 def CommitDiffModelFactory(
@@ -57,8 +57,8 @@ def CommitDiffModelFactory(
             # Convert the index to one-hot encoded matrix
             one_hot_winners = tf.one_hot(winning_index, self.som_grid_size * self.som_grid_size)
 
-            # Multiply the one-hot matrix with SOM weights and reduce the dimensions
-            som_output = tf.reduce_sum(one_hot_winners[:, :, tf.newaxis] * self.som_weights, axis=1)
+            # Multiply the one-hot matrix with SOM weights
+            som_output = tf.matmul(one_hot_winners, self.som_weights)
 
             return som_output
 
@@ -141,9 +141,9 @@ def CommitDiffModelFactory(
             self.rate = 0.1
             self.activation_fn1 = "relu"
             self.activation_fn2 = "relu"
-            self.activation_fn3 = "relu"
+            self.activation_fn3 = "sigmoid"
             self.optimizer = "adam"
-            self.loss_fn = "mse"
+            self.loss_fn = "binary_crossentropy"
             self.temperature = 0.1
             self.embedding_dim = 50
             self.encoder = None
@@ -174,7 +174,7 @@ def CommitDiffModelFactory(
         
         def embedded_encoder_recurrent_convolutional(self, inputs):   
             
-            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM, output_dim=self.embedding_dim)(inputs)
+            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
         
             # Add a 2D convolutional layer to extract features from each context
             conv = Conv2D(filters=32, kernel_size=(6, 6), activation='relu')(embedded_inputs)
@@ -193,7 +193,7 @@ def CommitDiffModelFactory(
         def transformer_encoder(self, inputs):
             
             # Add optional embedding layer
-            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM, output_dim=self.embedding_dim)(inputs)
+            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply multi-head self-attention
             attn_output = MultiHeadAttention(num_heads=self.num_heads, key_dim=self.key_dim)(embedded_inputs, embedded_inputs)
@@ -209,7 +209,7 @@ def CommitDiffModelFactory(
         def hierarchical_attention_encoder(self, inputs):
             
             # Add optional embedding layer
-            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM, output_dim=self.embedding_dim)(inputs)
+            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply a bidirectional GRU to each context
             gru_output = TimeDistributed(Bidirectional(GRU(units=self.units, return_sequences=True)))(embedded_inputs)
@@ -230,7 +230,7 @@ def CommitDiffModelFactory(
         
         def multi_head_self_attention_encoder(self, inputs):
             # Add optional embedding layer
-            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM, output_dim=self.embedding_dim)(inputs)
+            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply multi-head self-attention to the input
             attention_output = MultiHeadAttention(num_heads=self.num_heads, key_dim=self.key_dim)(embedded_inputs, embedded_inputs)
@@ -242,7 +242,7 @@ def CommitDiffModelFactory(
 
         def positional_pooling_encoder(self, inputs):
             # Add optional embedding layer
-            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM, output_dim=self.embedding_dim)(inputs)
+            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply global max pooling to the input
             max_pooling = GlobalMaxPooling2D()(embedded_inputs)
@@ -257,12 +257,12 @@ def CommitDiffModelFactory(
             return som_output
 
         def capsule_encoder(self, inputs):
-            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM, output_dim=self.embedding_dim)(inputs)
+            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
             capsule_output = CapsuleEncoder()(embedded_inputs)
             return capsule_output
 
         def tcn_encoder(self, inputs):
-            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM, output_dim=self.embedding_dim)(inputs)
+            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
             tcn_output = TCNEncoder(filters=self.embedding_dim)(embedded_inputs)
             flattened_tcn_output = Flatten()(tcn_output)
             return flattened_tcn_output
@@ -270,7 +270,7 @@ def CommitDiffModelFactory(
         def attention_augmented_conv_encoder(self, inputs):
 
             # Add optional embedding layer
-            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM, output_dim=self.embedding_dim)(inputs)
+            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply attention augmented convolutions
             conv = Conv2D(filters=self.embedding_dim, kernel_size=(3,3), padding="same")(embedded_inputs)
@@ -284,7 +284,7 @@ def CommitDiffModelFactory(
         def bidirectional_lstm_encoder(self, inputs):
 
             # Add optional embedding layer
-            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM, output_dim=self.embedding_dim)(inputs)
+            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply bidirectional LSTM layer
             reshaped_inputs = tf.keras.layers.Reshape((self.example_size, self.context_size * self.embedding_dim))(embedded_inputs)
@@ -299,7 +299,7 @@ def CommitDiffModelFactory(
         def lstm_with_dense_layers_encoder(self, inputs):
 
             # Add optional embedding layer
-            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM, output_dim=self.embedding_dim)(inputs)
+            embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
         
             flattened = Reshape((-1, 32))(embedded_inputs)
 
@@ -411,8 +411,8 @@ def CommitDiffModelFactory(
             # Encode bag of contexts using the same encoder model
             encoded1 = self.encoder(bag1_input)
             encoded2 = self.encoder(bag2_input)
-            for layer in self.encoder.layers:
-                layer.trainable = False
+            # for layer in self.encoder.layers:
+            #     layer.trainable = False
                 
             name_reshaped = name_input#Reshape((1,))(name_input)
             timestamp_reshaped = timestamp_input#Reshape((1,))(timestamp_input)
@@ -431,7 +431,7 @@ def CommitDiffModelFactory(
             model = tf.keras.Model(inputs=[name_input, timestamp_input, message_input, bag1_input, bag2_input], outputs=binary_classification)
             
             # Compile model
-            model.compile(optimizer=self.optimizer, loss="mse")
+            model.compile(optimizer=self.optimizer, loss="binary_crossentropy")
             
             return model
 
@@ -464,4 +464,48 @@ def CommitDiffModelFactory(
             # Evaluate the model on the test set
             return self.binary_classification_model.evaluate([X_test_name, X_test_timestamp, X_test_message, X_test_bag1, X_test_bag2], y_test, verbose=verbose)
     
+        def debug(self, X_train):
+
+            X_train_name = np.array([tup[0] for tup in X_train])
+            X_train_timestamp = np.array([tup[1] for tup in X_train])
+            X_train_message = np.array([tup[2] for tup in X_train])
+            X_train_bag1 = np.array([tup[3] for tup in X_train])
+            X_train_bag2 = np.array([tup[4] for tup in X_train])
+
+            # Encode bag of contexts using the same encoder model
+            encoded1 = self.encoder(X_train_bag1[0].reshape(1, -1, CONTEXT_SIZE))
+            encoded2 = self.encoder(X_train_bag2[0].reshape(1, -1, CONTEXT_SIZE))
+            print("Encoded1:", encoded1)
+            print("Encoded2:", encoded2)
+
+            print(X_train_name[0])
+            print(X_train_timestamp[0])
+            print(X_train_message[0])
+
+            name_reshaped = np.array([X_train_name[0]])
+            timestamp_reshaped = np.array([X_train_timestamp[0]])
+            message_reshaped = np.array([X_train_message[0]])
+
+            print(encoded1.shape)
+            print(encoded2.shape)
+            print(name_reshaped.shape)
+            print(timestamp_reshaped.shape)
+            print(message_reshaped.shape)
+
+            merged = tf.keras.layers.Concatenate()([encoded1, encoded2, name_reshaped, timestamp_reshaped, message_reshaped])
+            print("Merged:", merged)
+
+            # Binary classification output
+            binary_classification = tf.keras.layers.Dense(units=512, activation=self.activation_fn3)(merged)
+            print("Binary classification step 1:", binary_classification)
+            binary_classification = tf.keras.layers.Dense(units=512, activation=self.activation_fn3)(binary_classification)
+            print("Binary classification step 2:", binary_classification)
+            binary_classification = tf.keras.layers.Dense(units=256, activation=self.activation_fn3)(binary_classification)
+            print("Binary classification step 3:", binary_classification)
+            binary_classification = tf.keras.layers.Dense(units=1, activation=self.activation_fn3)(binary_classification)
+            print("Binary classification step 4:", binary_classification)
+
+            return binary_classification
+
+
     return CommitDiffModel

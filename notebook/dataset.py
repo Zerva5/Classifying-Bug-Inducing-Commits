@@ -12,6 +12,7 @@ import random
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
+
 from Commit import CommitFactory
 Commit = CommitFactory()
 
@@ -68,7 +69,7 @@ def get_unlabelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
     global COMMIT_LOOKUP
     _preload()
 
-    X_train = [raw_to_padded(COMMIT_LOOKUP[sha].bag_of_contexts, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE) for sha in tqdm(COMMIT_LOOKUP, total=len(COMMIT_LOOKUP))]
+    X_train = [raw_to_padded(COMMIT_LOOKUP[sha].bag_of_contexts, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE) for sha in tqdm(COMMIT_LOOKUP, total=len(COMMIT_LOOKUP), desc="Generating Unsupervised X_train")]
 
     return X_train
 
@@ -80,10 +81,10 @@ def get_positive_labelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
     
     X_train = [
         row_to_example(row, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
-        for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating X_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP
+        for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Positive X_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP
     ]
 
-    y_train = [row["Y"] for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating X_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP]
+    y_train = [row["Y"] for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Positive y_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP]
 
     return X_train, y_train
 
@@ -95,10 +96,10 @@ def get_negative_labelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
     
     X_train = [
         row_to_example(row, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
-        for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating X_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP
+        for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Negative X_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP
     ]
 
-    y_train = [row["Y"] for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating X_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP]
+    y_train = [row["Y"] for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Negative y_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP]
 
     return X_train, y_train
 

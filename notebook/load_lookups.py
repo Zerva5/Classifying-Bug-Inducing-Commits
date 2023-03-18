@@ -1,5 +1,6 @@
 import os
 import pickle
+from tqdm.auto import tqdm
 from Commit import CommitFactory
 Commit = CommitFactory()
 
@@ -9,7 +10,7 @@ def load_commit_lookup(pickle_dir = '../data/commit_lookups', verbose = True):
     COMMIT_DATA_LOOKUP = {}
     
     # loop through all the files in the directory
-    for file_name in os.listdir(pickle_dir):
+    for file_name in tqdm(os.listdir(pickle_dir)):
         # check if the file is a pickle
         if file_name.endswith('.pickle'):
 

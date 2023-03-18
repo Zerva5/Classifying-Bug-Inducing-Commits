@@ -1,5 +1,10 @@
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
+import numpy as np
+
+def sigmoid(x):
+    z = np.clip(x, -500, 500)
+    return 1 / (1 + np.exp(-z))
 
 def processNames(name1: str, name2: str):
     if name1 == name2:
@@ -16,7 +21,7 @@ def processTimestamps(timestamp1: int, timestamp2: int):
     #if(difference < 0):
     #    difference *= -1
     
-    return difference
+    return sigmoid(difference)
 
 # Process two commit messages and return a similarity score from 0 to 1
 def processCommitMessages(commit1: str, commit2: str):
@@ -25,7 +30,7 @@ def processCommitMessages(commit1: str, commit2: str):
     c1_len = len(commit1)
     c2_len = len(commit2)
 
-    return similarity, c1_len, c2_len
+    return similarity, sigmoid(c1_len), sigmoid(c2_len)
 
 def processCommitFileMetadata():
     pass
