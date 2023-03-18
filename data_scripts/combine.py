@@ -22,22 +22,28 @@ import cProfile
 import pstats
 import time
 import re
+import gzip
 
-#Toggle to determine if tokens should be one-hot encoded BY OUR PRE-PROCESSING or not
-ONE_HOT = False
+def raw_to_padded(bag_of_contexts, CONTEXT_SIZE, BAG_SIZE):
 
-#Toggle to drop paths above the context size limit. Likely should always be set to true.
-IGNORE_DEEP_PATHS = True
+    padded_one_hot_paths = []
+    for path in bag_of_contexts:
+        if len(path) > CONTEXT_SIZE:
+            continue
+        padded_path = [0] * max(CONTEXT_SIZE - len(path), 0) + path[-CONTEXT_SIZE:]
+        padded_one_hot_paths.append(padded_path)
 
-#Generate full tuples of (terminal_token_a, (path...), terminal_token_b) instead of just paths.
-#commit2seq describes using this strategy as being quite a bit more effective (like 30%), but currently I
-#haven't figured out how to implement it.
-USE_FULL_TUPLES = False    #NOT working yet
+    bag_of_contexts = padded_one_hot_paths
 
-#Set this to true in order to speed up path generation. However makes it so pruning to the BAG_SIZE happens
-#immediately and can't be adjusted without a re-run. If this is false the pruning and padding must be done before training
-IMMEDIATE_PAD_AND_PRUNE = False
+    if(len(bag_of_contexts) == BAG_SIZE):
+        return bag_of_contexts
 
+    if(len(bag_of_contexts) > BAG_SIZE):
+        return random.sample(bag_of_contexts, BAG_SIZE)
+
+    blank_path = ([0] * CONTEXT_SIZE)
+
+    return ([blank_path] * (BAG_SIZE - len(bag_of_contexts)) + bag_of_contexts)
 
 class Commit:
     
@@ -67,12 +73,12 @@ for file_name in os.listdir(pickle_dir):
 
         with open(pickle_file, 'rb') as f:
             try:
-                data = pickle.load(f)        
+                data = pickle.load(f)
                 COMMIT_DATA_LOOKUP.update(data)
                 print("Appending pickle of length:", len(data.keys()), ", new dict length:", len(COMMIT_DATA_LOOKUP.keys()))
             except Exception as e:
                 print(pickle_file, e)
 
 
-with open('../data/commit_lookups/full_commit_data_lookup.pickle', 'wb') as file:
+with gzip.open('../data/commit_lookups/full_commit_data_lookup.pickle.gz', 'wb') as file:
     pickle.dump(COMMIT_DATA_LOOKUP, file, protocol=pickle.HIGHEST_PROTOCOL)
