@@ -464,48 +464,5 @@ def CommitDiffModelFactory(
             # Evaluate the model on the test set
             return self.binary_classification_model.evaluate([X_test_name, X_test_timestamp, X_test_message, X_test_bag1, X_test_bag2], y_test, verbose=verbose)
     
-        def debug(self, X_train):
-
-            X_train_name = np.array([tup[0] for tup in X_train])
-            X_train_timestamp = np.array([tup[1] for tup in X_train])
-            X_train_message = np.array([tup[2] for tup in X_train])
-            X_train_bag1 = np.array([tup[3] for tup in X_train])
-            X_train_bag2 = np.array([tup[4] for tup in X_train])
-
-            # Encode bag of contexts using the same encoder model
-            encoded1 = self.encoder(X_train_bag1[0].reshape(1, -1, CONTEXT_SIZE))
-            encoded2 = self.encoder(X_train_bag2[0].reshape(1, -1, CONTEXT_SIZE))
-            print("Encoded1:", encoded1)
-            print("Encoded2:", encoded2)
-
-            print(X_train_name[0])
-            print(X_train_timestamp[0])
-            print(X_train_message[0])
-
-            name_reshaped = np.array([X_train_name[0]])
-            timestamp_reshaped = np.array([X_train_timestamp[0]])
-            message_reshaped = np.array([X_train_message[0]])
-
-            print(encoded1.shape)
-            print(encoded2.shape)
-            print(name_reshaped.shape)
-            print(timestamp_reshaped.shape)
-            print(message_reshaped.shape)
-
-            merged = tf.keras.layers.Concatenate()([encoded1, encoded2, name_reshaped, timestamp_reshaped, message_reshaped])
-            print("Merged:", merged)
-
-            # Binary classification output
-            binary_classification = tf.keras.layers.Dense(units=512, activation=self.activation_fn3)(merged)
-            print("Binary classification step 1:", binary_classification)
-            binary_classification = tf.keras.layers.Dense(units=512, activation=self.activation_fn3)(binary_classification)
-            print("Binary classification step 2:", binary_classification)
-            binary_classification = tf.keras.layers.Dense(units=256, activation=self.activation_fn3)(binary_classification)
-            print("Binary classification step 3:", binary_classification)
-            binary_classification = tf.keras.layers.Dense(units=1, activation=self.activation_fn3)(binary_classification)
-            print("Binary classification step 4:", binary_classification)
-
-            return binary_classification
-
 
     return CommitDiffModel
