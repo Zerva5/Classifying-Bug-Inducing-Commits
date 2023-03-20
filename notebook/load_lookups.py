@@ -28,7 +28,7 @@ def load_commit_lookup(pickle_dir = '../data/commit_lookups', verbose = True, ma
                     data = pickle.load(f)
 
                     for sha in data:
-                        if max_commits != None and len(COMMIT_DATA_LOOKUP) > max_commits:
+                        if max_commits != None and len(COMMIT_DATA_LOOKUP) >= max_commits:
                             iterator.close()
                             return COMMIT_DATA_LOOKUP
 

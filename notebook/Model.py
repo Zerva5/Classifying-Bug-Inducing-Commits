@@ -14,6 +14,7 @@ from tensorflow.keras.layers import (
     Add, Masking, GlobalMaxPooling1D, GlobalMaxPooling2D, Reshape, MaxPooling1D, MaxPooling2D,
     Dropout, Conv1D, Conv2D, Bidirectional, GRU, ConvLSTM2D, Flatten, Permute, GlobalAveragePooling1D, GlobalAveragePooling2D
 )
+from tensorflow.keras.initializers import RandomUniform
 
 from vocab import MAX_NODE_LOOKUP_NUM
 
@@ -24,31 +25,38 @@ def CommitDiffModelFactory(
     OUTPUT_SIZE = 128
 ):
     
-    class SOMEncoder(Layer):
-        def __init__(self, context_size, som_grid_size=8, **kwargs):
-            super(SOMEncoder, self).__init__(**kwargs)
+    class SOMEncoderLayer(Layer):
+        def __init__(self, max_node_lookup_num, embedding_dim, context_size, bag_size, som_grid_size, fixed_vector_size):
+            super(SOMEncoderLayer, self).__init__()
+            self.max_node_lookup_num = max_node_lookup_num
+            self.embedding_dim = embedding_dim
             self.context_size = context_size
+            self.bag_size = bag_size
             self.som_grid_size = som_grid_size
 
-        def build(self, input_shape):
-            self.embedding_dim = input_shape[-1]
-            self.som_weights = self.add_weight(
-                shape=(self.som_grid_size * self.som_grid_size, self.embedding_dim),
-                initializer="random_normal",
-                trainable=True,
-                name="som_weights",
-            )
-            super(SOMEncoder, self).build(input_shape)
+            self.embedding = Embedding(input_dim=self.max_node_lookup_num + 1, output_dim=self.embedding_dim)
+            self.conv2d = Conv2D(filters=32, kernel_size=(6, 6), activation='relu')
+            self.max_pooling = MaxPooling2D(pool_size=(self.context_size, 1))
+            self.reshape = Reshape((-1, 32))
+            self.lstm = LSTM(units=64)
+            
+            # Initialize SOM weights
+            self.som_weights = self.add_weight(name="som_weights",
+                                            shape=(self.som_grid_size * self.som_grid_size, 64),
+                                            initializer=RandomUniform(minval=-1, maxval=1),
+                                            trainable=True)
+                                            
+            self.dense = Dense(fixed_vector_size, activation='sigmoid')
 
         def call(self, inputs):
-            # Calculate the mean of the embeddings along the CONTEXT_SIZE axis
-            mean_inputs = tf.reduce_mean(inputs, axis=2)
-
-            # Flatten the input
-            flattened = tf.reshape(mean_inputs, (-1, self.embedding_dim))
+            embedded_inputs = self.embedding(inputs)
+            conv = self.conv2d(embedded_inputs)
+            max_pooling = self.max_pooling(conv)
+            flattened = self.reshape(max_pooling)
+            lstm = self.lstm(flattened)
 
             # Calculate the Euclidean distance between input and SOM grid
-            tiled_inputs = tf.tile(flattened[:, tf.newaxis, :], [1, self.som_grid_size * self.som_grid_size, 1])
+            tiled_inputs = tf.tile(lstm[:, tf.newaxis, :], [1, self.som_grid_size * self.som_grid_size, 1])
             distance = tf.reduce_sum(tf.square(tiled_inputs - self.som_weights), axis=-1)
 
             # Find the index of the minimum distance
@@ -57,14 +65,10 @@ def CommitDiffModelFactory(
             # Convert the index to one-hot encoded matrix
             one_hot_winners = tf.one_hot(winning_index, self.som_grid_size * self.som_grid_size)
 
-            # Multiply the one-hot matrix with SOM weights
-            som_output = tf.matmul(one_hot_winners, self.som_weights)
+            # Map one-hot encoded matrix to the desired output size
+            output_vector = self.dense(one_hot_winners)
 
-            return som_output
-
-        def compute_output_shape(self, input_shape):
-            return (input_shape[0], self.embedding_dim)
-
+            return output_vector
 
     class CapsuleEncoder(Layer):
         def __init__(self, num_capsules=10, capsule_dim=16, **kwargs):
@@ -132,10 +136,10 @@ def CommitDiffModelFactory(
     class CommitDiffModel:
         def __init__(self):
             self.input_shape = (BAG_SIZE, CONTEXT_SIZE)
-            self.example_size = BAG_SIZE
+            self.bag_size = BAG_SIZE
             self.context_size = CONTEXT_SIZE
             self.fixed_vector_size = OUTPUT_SIZE
-            self.num_heads = 4
+            self.num_heads = 1
             self.key_dim = 512
             self.units = 128
             self.rate = 0.1
@@ -253,8 +257,7 @@ def CommitDiffModelFactory(
             return dense_output
         
         def som_encoder(self, inputs):
-            som_output = SOMEncoder(context_size=self.context_size)(inputs)
-            return som_output
+            return SOMEncoderLayer(MAX_NODE_LOOKUP_NUM, self.embedding_dim, self.context_size, self.bag_size, 4, self.fixed_vector_size)(inputs)
 
         def capsule_encoder(self, inputs):
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
@@ -287,7 +290,7 @@ def CommitDiffModelFactory(
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply bidirectional LSTM layer
-            reshaped_inputs = tf.keras.layers.Reshape((self.example_size, self.context_size * self.embedding_dim))(embedded_inputs)
+            reshaped_inputs = tf.keras.layers.Reshape((self.bag_size, self.context_size * self.embedding_dim))(embedded_inputs)
 
             # Apply bidirectional LSTM layer
             x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=64, return_sequences=True))(reshaped_inputs)
