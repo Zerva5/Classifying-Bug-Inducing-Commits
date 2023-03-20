@@ -142,16 +142,12 @@ def CommitDiffModelFactory(
             self.bag_size = BAG_SIZE
             self.context_size = CONTEXT_SIZE
             self.fixed_vector_size = OUTPUT_SIZE
-            self.num_heads = 1
-            self.key_dim = 16
-            self.units = 128
             self.rate = 0.1
             self.activation_fn1 = "relu"
             self.activation_fn2 = "relu"
             self.activation_fn3 = "sigmoid"
             self.optimizer = "adam"
             self.loss_fn = "binary_crossentropy"
-            self.temperature = 0.1
             self.embedding_dim = 50
             self.encoder = None
             self.siam_model = None
@@ -203,10 +199,10 @@ def CommitDiffModelFactory(
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply multi-head self-attention
-            attn_output = MultiHeadAttention(num_heads=self.num_heads, key_dim=self.key_dim)(embedded_inputs, embedded_inputs)
+            attn_output = Attention()([embedded_inputs, embedded_inputs, embedded_inputs])
 
             # Add a feed-forward layer
-            ff_output = Dense(units=self.units, activation=self.activation_fn1)(attn_output)
+            ff_output = Dense(units=128, activation=self.activation_fn1)(attn_output)
 
             # Add a global average pooling layer to summarize the extracted features
             avg_pooling = GlobalAveragePooling2D()(ff_output)
@@ -219,16 +215,16 @@ def CommitDiffModelFactory(
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply a bidirectional GRU to each context
-            gru_output = TimeDistributed(Bidirectional(GRU(units=self.units, return_sequences=True)))(embedded_inputs)
+            gru_output = TimeDistributed(Bidirectional(GRU(units=8, return_sequences=True)))(embedded_inputs)
 
             # Apply token-level attention
-            token_attn_output = MultiHeadAttention(num_heads=self.num_heads, key_dim=self.key_dim)(gru_output, gru_output)
+            token_attn_output = Attention()([gru_output, gru_output, gru_output])
 
             # Apply token-level global average pooling
             token_avg_pooling = TimeDistributed(GlobalAveragePooling1D())(token_attn_output)
 
             # Apply context-level attention
-            context_attn_output = MultiHeadAttention(num_heads=self.num_heads, key_dim=self.key_dim)(token_avg_pooling, token_avg_pooling)
+            context_attn_output = Attention()([token_avg_pooling, token_avg_pooling, token_avg_pooling])
 
             # Apply context-level global average pooling
             context_avg_pooling = GlobalAveragePooling1D()(context_attn_output)
@@ -240,7 +236,7 @@ def CommitDiffModelFactory(
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply multi-head self-attention to the input
-            attention_output = MultiHeadAttention(num_heads=self.num_heads, key_dim=self.key_dim)(embedded_inputs, embedded_inputs)
+            attention_output = Attention()([embedded_inputs, embedded_inputs, embedded_inputs])
 
             # Add a global average pooling layer to summarize the extracted features
             avg_pooling = GlobalAveragePooling2D()(attention_output)
@@ -255,7 +251,7 @@ def CommitDiffModelFactory(
             max_pooling = GlobalMaxPooling2D()(embedded_inputs)
 
             # Add a dense layer to capture the most significant features
-            dense_output = Dense(units=self.units, activation=self.activation_fn1)(max_pooling)
+            dense_output = Dense(units=128, activation=self.activation_fn1)(max_pooling)
 
             return dense_output
         
@@ -397,7 +393,7 @@ def CommitDiffModelFactory(
                 z = tf.stop_gradient(z)
                 p = tf.math.l2_normalize(p, axis=1)
                 z = tf.math.l2_normalize(z, axis=1)
-                return tf.clip_by_value(-tf.reduce_mean(tf.reduce_sum(p * z, axis=1)), clip_value_min=0.0, clip_value_max=1.0)
+                return -tf.reduce_mean(tf.reduce_sum(p * z, axis=1))
             
             def siamese_loss(y_true, y_pred):
                 p1, p2, z1, z2 = y_pred[:, 0:self.fixed_vector_size], y_pred[:, self.fixed_vector_size:self.fixed_vector_size * 2], y_pred[:, self.fixed_vector_size * 2:self.fixed_vector_size * 3], y_pred[:, self.fixed_vector_size * 3:]
@@ -446,7 +442,7 @@ def CommitDiffModelFactory(
             model = tf.keras.Model(inputs=[name_input, timestamp_input, message_input, bag1_input, bag2_input], outputs=binary_classification)
             
             # Compile model
-            model.compile(optimizer=self.optimizer, loss="binary_crossentropy")
+            model.compile(optimizer=self.optimizer, loss=self.loss_fn)
             
             return model
 
