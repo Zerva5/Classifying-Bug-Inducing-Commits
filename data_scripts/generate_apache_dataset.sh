@@ -3,13 +3,16 @@
 # Change to the parent directory and then to the 'clones' directory
 cd ../clones
 
+COMMIT_REGEX='(apache-activemq|apache-beam|apache-camel|apache-cassandra|apache-dolphinscheduler|apache-doris|apache-druid|apache-dubbo|apache-flink|apache-groovy|apache-hadoop|apache-hbase|apache-hive|apache-ignite|apache-jmeter|apache-kafka|apache-pulsar|apache-rocketmq|apache-shardingsphere|apache-shenyu|apache-skywalking|apache-spark|apache-storm|apache-tomcat|apache-zeppelin|apache-zookeeper)\/?'
+
 # Initialize an empty file for the results
 output_file="../data/all_apache_commits.csv"
 echo "repo,sha,files_changed,diff_line_count" > "$output_file"
 
 # Loop through all the subdirectories
-for repo in */; do
-	if [[ "$repo" == "apache-activemq/" || "$repo" == "apache-cassandra/" || "$repo" == "apache-groovy/" || "$repo" == "apache-hbase/" || "$repo" == "apache-ignite/" || "$repo" == "apache-spark/" || "$repo" == "apache-zookeeper/" || "$repo" == "apache-camel/" || "$repo" == "apache-flink/" || "$repo" == "apache-hadoop/" || "$repo" == "apache-hive/" || "$repo" == "apache-kafka/" || "$repo" == "apache-zeppelin/" ]]; then
+for repo in *; do
+
+    if ! [[ "$repo" =~ $COMMIT_REGEX ]]; then
 		continue
 	fi
 
@@ -27,14 +30,15 @@ for repo in */; do
 		java_changes=$(git show --pretty="" --name-only "$commit" | grep '\.java$' | wc -l)
 
 		# Check if the number of Java files changed is between 1 and 32
-		if [ "$java_changes" -ge 1 ] && [ "$java_changes" -le 32 ]; then
+		if [ "$java_changes" -ge 1 ]; then #&& [ "$java_changes" -le 32 ]; then
 			# Get the total diff lines for the Java files
-			total_diff_lines=$(git show "$commit" -- "*.java" | grep '^[-+][^-+]' | wc -l)
 
-			if [ "$total_diff_lines" -lt 250 ]; then
+
+			#if [ "$total_diff_lines" -lt 250 ]; then
 				# Save the result for this commit
-				echo "${repo%/},$commit,$java_changes,$total_diff_lines" >> "../$output_file"
-			fi
+            total_diff_lines=$(git show "$commit" -- "*.java" | grep '^[-+][^-+]' | wc -l)
+			echo "${repo%/},$commit,$java_changes,$total_diff_lines" >> "../$output_file"
+			#fi
 		fi
 	}
 
