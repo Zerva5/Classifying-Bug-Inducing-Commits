@@ -137,7 +137,7 @@ def CommitDiffModelFactory(
 
 
     class CommitDiffModel:
-        def __init__(self):
+        def __init__(self, unsupervised_data_size):
             self.input_shape = (BAG_SIZE, CONTEXT_SIZE)
             self.bag_size = BAG_SIZE
             self.context_size = CONTEXT_SIZE
@@ -148,7 +148,12 @@ def CommitDiffModelFactory(
             self.activation_fn3 = "sigmoid"
             self.optimizer = "adam"
             self.loss_fn = "binary_crossentropy"
-            self.embedding_dim = 50
+            self.embedding_dim = 64
+            self.base_lr = 0.05
+            self.weight_decay = 0.0001
+            self.momentum = 0.9
+            self.unsupervised_data_size = unsupervised_data_size
+
             self.encoder = None
             self.siam_model = None
             self.binary_classification_model = None
@@ -157,7 +162,6 @@ def CommitDiffModelFactory(
             self.encoder = self.build_encoder(encoder=encoder)
             self.siam_model = self.build_siam_model()
             self.binary_classification_model = self.build_binary_classification_model()
-            
             
         ##################################### Potential Encoders #####################################
             
@@ -381,8 +385,8 @@ def CommitDiffModelFactory(
             x2_shuffled = shuffle_layer(x2)
             
             # Encode the input twice using the same encoder
-            z1 = self.encoder(x1)
-            z2 = self.encoder(x2)
+            z1 = self.encoder(x1_shuffled)
+            z2 = self.encoder(x2_shuffled)
             
             # Predict a transformation of the first encoding
             p1 = Dense(units=self.fixed_vector_size, activation=self.activation_fn2)(z1)
@@ -405,8 +409,13 @@ def CommitDiffModelFactory(
             # Define the model
             model = tf.keras.Model(inputs=[x1, x2], outputs=concatenated_outputs)
 
+            lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.base_lr * 2, self.unsupervised_data_size)
+
+            # Define the optimizer with SGD, weight decay, and momentum
+            optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
+
             # Compile the model
-            model.compile(optimizer=self.optimizer, loss=siamese_loss)
+            model.compile(optimizer=optimizer, loss=siamese_loss)
 
             return model
 
