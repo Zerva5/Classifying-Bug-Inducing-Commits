@@ -9,9 +9,6 @@ echo "repo,sha,files_changed,diff_line_count" > "$output_file"
 
 # Loop through all the subdirectories
 for repo in */; do
-	if [[ "$repo" == "apache-activemq/" || "$repo" == "apache-cassandra/" || "$repo" == "apache-groovy/" || "$repo" == "apache-hbase/" || "$repo" == "apache-ignite/" || "$repo" == "apache-spark/" || "$repo" == "apache-zookeeper/" || "$repo" == "apache-camel/" || "$repo" == "apache-flink/" || "$repo" == "apache-hadoop/" || "$repo" == "apache-hive/" || "$repo" == "apache-kafka/" || "$repo" == "apache-zeppelin/" ]]; then
-		continue
-	fi
 
 	echo "Processing $repo"
 	cd "$repo"
@@ -26,12 +23,12 @@ for repo in */; do
 
 		java_changes=$(git show --pretty="" --name-only "$commit" | grep '\.java$' | wc -l)
 
-		# Check if the number of Java files changed is between 1 and 32
-		if [ "$java_changes" -ge 1 ] && [ "$java_changes" -le 32 ]; then
+		# Check if the number of Java files changed is between 1 and 8
+		if [ "$java_changes" -ge 1 ] && [ "$java_changes" -le 8 ]; then
 			# Get the total diff lines for the Java files
 			total_diff_lines=$(git show "$commit" -- "*.java" | grep '^[-+][^-+]' | wc -l)
 
-			if [ "$total_diff_lines" -lt 250 ]; then
+			if [ "$total_diff_lines" -lt 75 ]; then
 				# Save the result for this commit
 				echo "${repo%/},$commit,$java_changes,$total_diff_lines" >> "../$output_file"
 			fi

@@ -78,7 +78,7 @@ def CommitDiffModelFactory(
 
         def squash_activation(self, x, axis=-1):
             squared_norm = tf.reduce_sum(tf.square(x), axis=axis, keepdims=True)
-            scale = squared_norm / (1 + squared_norm) / tf.sqrt(squared_norm + tf.keras.backend.epsilon())
+            scale = squared_norm / (1 + squared_norm) / (tf.sqrt(squared_norm + tf.keras.backend.epsilon()) + tf.keras.backend.epsilon())
             return scale * x
 
         def build(self, input_shape):
@@ -98,6 +98,9 @@ def CommitDiffModelFactory(
 
             # Calculate the vector length of the secondary capsules
             capsule_lengths = Lambda(lambda x: tf.sqrt(tf.reduce_sum(tf.square(x), axis=-1)))(secondary_capsules)
+
+            # Clip the capsule lengths to the range of [0, 1]
+            capsule_lengths = tf.clip_by_value(capsule_lengths, clip_value_min=0.0, clip_value_max=1.0)
 
             # Flatten the capsule lengths
             flattened_capsule_lengths = Flatten()(capsule_lengths)
@@ -140,7 +143,7 @@ def CommitDiffModelFactory(
             self.context_size = CONTEXT_SIZE
             self.fixed_vector_size = OUTPUT_SIZE
             self.num_heads = 1
-            self.key_dim = 512
+            self.key_dim = 16
             self.units = 128
             self.rate = 0.1
             self.activation_fn1 = "relu"
@@ -373,9 +376,13 @@ def CommitDiffModelFactory(
             # Create SimSiam model
             x1 = Input(shape=self.input_shape)
             x2 = Input(shape=self.input_shape)
-            
-            x1 = tf.random.shuffle(x1)
-            x2 = tf.random.shuffle(x2)
+
+            # Define a lambda layer to shuffle the input tensors
+            shuffle_layer = Lambda(lambda x: tf.random.shuffle(x))
+
+            # Apply the shuffle layer to the input tensors
+            x1_shuffled = shuffle_layer(x1)
+            x2_shuffled = shuffle_layer(x2)
             
             # Encode the input twice using the same encoder
             z1 = self.encoder(x1)
@@ -390,16 +397,21 @@ def CommitDiffModelFactory(
                 z = tf.stop_gradient(z)
                 p = tf.math.l2_normalize(p, axis=1)
                 z = tf.math.l2_normalize(z, axis=1)
-                return -tf.reduce_mean(tf.reduce_sum(p * z, axis=1))
+                return tf.clip_by_value(-tf.reduce_mean(tf.reduce_sum(p * z, axis=1)), clip_value_min=0.0, clip_value_max=1.0)
             
-            loss = D(p1, z2) / 2 + D(p2, z1) / 2
-            
+            def siamese_loss(y_true, y_pred):
+                p1, p2, z1, z2 = y_pred[:, 0:self.fixed_vector_size], y_pred[:, self.fixed_vector_size:self.fixed_vector_size * 2], y_pred[:, self.fixed_vector_size * 2:self.fixed_vector_size * 3], y_pred[:, self.fixed_vector_size * 3:]
+                return D(p1, z2) / 2 + D(p2, z1) / 2
+
+            # Concatenate the outputs
+            concatenated_outputs = Concatenate(axis=-1)([p1, p2, z1, z2])
+
             # Define the model
-            model = tf.keras.Model(inputs=[x1,x2], outputs=loss)
-            
+            model = tf.keras.Model(inputs=[x1, x2], outputs=concatenated_outputs)
+
             # Compile the model
-            model.compile(optimizer=self.optimizer, loss=lambda _, loss: loss)
-            
+            model.compile(optimizer=self.optimizer, loss=siamese_loss)
+
             return model
 
         def build_binary_classification_model(self):
