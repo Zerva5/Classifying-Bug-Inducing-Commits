@@ -24,11 +24,11 @@ NEGATIVE_CSV_FILE = "./icse_java_negative_pairs.csv"
 global COMMIT_LOOKUP
 COMMIT_LOOKUP = {}
 
-def _preload():
+def _preload(max_commits = None, max_commit_bag_size = None):
     global COMMIT_LOOKUP
     if len(COMMIT_LOOKUP) == 0:
         print("Loading Commit lookup table")
-        COMMIT_LOOKUP = load_commit_lookup()
+        COMMIT_LOOKUP = load_commit_lookup(max_commits = max_commits, max_commit_bag_size = max_commit_bag_size)
 
 ####################################################################################################################
 

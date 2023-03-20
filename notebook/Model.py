@@ -14,6 +14,7 @@ from tensorflow.keras.layers import (
     Add, Masking, GlobalMaxPooling1D, GlobalMaxPooling2D, Reshape, MaxPooling1D, MaxPooling2D,
     Dropout, Conv1D, Conv2D, Bidirectional, GRU, ConvLSTM2D, Flatten, Permute, GlobalAveragePooling1D, GlobalAveragePooling2D
 )
+from tensorflow.keras.initializers import RandomUniform
 
 from vocab import MAX_NODE_LOOKUP_NUM
 
@@ -24,31 +25,38 @@ def CommitDiffModelFactory(
     OUTPUT_SIZE = 128
 ):
     
-    class SOMEncoder(Layer):
-        def __init__(self, context_size, som_grid_size=8, **kwargs):
-            super(SOMEncoder, self).__init__(**kwargs)
+    class SOMEncoderLayer(Layer):
+        def __init__(self, max_node_lookup_num, embedding_dim, context_size, bag_size, som_grid_size, fixed_vector_size):
+            super(SOMEncoderLayer, self).__init__()
+            self.max_node_lookup_num = max_node_lookup_num
+            self.embedding_dim = embedding_dim
             self.context_size = context_size
+            self.bag_size = bag_size
             self.som_grid_size = som_grid_size
 
-        def build(self, input_shape):
-            self.embedding_dim = input_shape[-1]
-            self.som_weights = self.add_weight(
-                shape=(self.som_grid_size * self.som_grid_size, self.embedding_dim),
-                initializer="random_normal",
-                trainable=True,
-                name="som_weights",
-            )
-            super(SOMEncoder, self).build(input_shape)
+            self.embedding = Embedding(input_dim=self.max_node_lookup_num + 1, output_dim=self.embedding_dim)
+            self.conv2d = Conv2D(filters=32, kernel_size=(6, 6), activation='relu')
+            self.max_pooling = MaxPooling2D(pool_size=(self.context_size, 1))
+            self.reshape = Reshape((-1, 32))
+            self.lstm = LSTM(units=64)
+            
+            # Initialize SOM weights
+            self.som_weights = self.add_weight(name="som_weights",
+                                            shape=(self.som_grid_size * self.som_grid_size, 64),
+                                            initializer=RandomUniform(minval=-1, maxval=1),
+                                            trainable=True)
+                                            
+            self.dense = Dense(fixed_vector_size, activation='sigmoid')
 
         def call(self, inputs):
-            # Calculate the mean of the embeddings along the CONTEXT_SIZE axis
-            mean_inputs = tf.reduce_mean(inputs, axis=2)
-
-            # Flatten the input
-            flattened = tf.reshape(mean_inputs, (-1, self.embedding_dim))
+            embedded_inputs = self.embedding(inputs)
+            conv = self.conv2d(embedded_inputs)
+            max_pooling = self.max_pooling(conv)
+            flattened = self.reshape(max_pooling)
+            lstm = self.lstm(flattened)
 
             # Calculate the Euclidean distance between input and SOM grid
-            tiled_inputs = tf.tile(flattened[:, tf.newaxis, :], [1, self.som_grid_size * self.som_grid_size, 1])
+            tiled_inputs = tf.tile(lstm[:, tf.newaxis, :], [1, self.som_grid_size * self.som_grid_size, 1])
             distance = tf.reduce_sum(tf.square(tiled_inputs - self.som_weights), axis=-1)
 
             # Find the index of the minimum distance
@@ -57,14 +65,10 @@ def CommitDiffModelFactory(
             # Convert the index to one-hot encoded matrix
             one_hot_winners = tf.one_hot(winning_index, self.som_grid_size * self.som_grid_size)
 
-            # Multiply the one-hot matrix with SOM weights
-            som_output = tf.matmul(one_hot_winners, self.som_weights)
+            # Map one-hot encoded matrix to the desired output size
+            output_vector = self.dense(one_hot_winners)
 
-            return som_output
-
-        def compute_output_shape(self, input_shape):
-            return (input_shape[0], self.embedding_dim)
-
+            return output_vector
 
     class CapsuleEncoder(Layer):
         def __init__(self, num_capsules=10, capsule_dim=16, **kwargs):
@@ -74,7 +78,7 @@ def CommitDiffModelFactory(
 
         def squash_activation(self, x, axis=-1):
             squared_norm = tf.reduce_sum(tf.square(x), axis=axis, keepdims=True)
-            scale = squared_norm / (1 + squared_norm) / tf.sqrt(squared_norm + tf.keras.backend.epsilon())
+            scale = squared_norm / (1 + squared_norm) / (tf.sqrt(squared_norm + tf.keras.backend.epsilon()) + tf.keras.backend.epsilon())
             return scale * x
 
         def build(self, input_shape):
@@ -94,6 +98,9 @@ def CommitDiffModelFactory(
 
             # Calculate the vector length of the secondary capsules
             capsule_lengths = Lambda(lambda x: tf.sqrt(tf.reduce_sum(tf.square(x), axis=-1)))(secondary_capsules)
+
+            # Clip the capsule lengths to the range of [0, 1]
+            capsule_lengths = tf.clip_by_value(capsule_lengths, clip_value_min=0.0, clip_value_max=1.0)
 
             # Flatten the capsule lengths
             flattened_capsule_lengths = Flatten()(capsule_lengths)
@@ -130,22 +137,23 @@ def CommitDiffModelFactory(
 
 
     class CommitDiffModel:
-        def __init__(self):
+        def __init__(self, unsupervised_data_size):
             self.input_shape = (BAG_SIZE, CONTEXT_SIZE)
-            self.example_size = BAG_SIZE
+            self.bag_size = BAG_SIZE
             self.context_size = CONTEXT_SIZE
             self.fixed_vector_size = OUTPUT_SIZE
-            self.num_heads = 4
-            self.key_dim = 512
-            self.units = 128
             self.rate = 0.1
             self.activation_fn1 = "relu"
             self.activation_fn2 = "relu"
             self.activation_fn3 = "sigmoid"
             self.optimizer = "adam"
             self.loss_fn = "binary_crossentropy"
-            self.temperature = 0.1
-            self.embedding_dim = 50
+            self.embedding_dim = 64
+            self.base_lr = 0.05
+            self.weight_decay = 0.0001
+            self.momentum = 0.9
+            self.unsupervised_data_size = unsupervised_data_size
+
             self.encoder = None
             self.siam_model = None
             self.binary_classification_model = None
@@ -154,7 +162,6 @@ def CommitDiffModelFactory(
             self.encoder = self.build_encoder(encoder=encoder)
             self.siam_model = self.build_siam_model()
             self.binary_classification_model = self.build_binary_classification_model()
-            
             
         ##################################### Potential Encoders #####################################
             
@@ -196,10 +203,10 @@ def CommitDiffModelFactory(
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply multi-head self-attention
-            attn_output = MultiHeadAttention(num_heads=self.num_heads, key_dim=self.key_dim)(embedded_inputs, embedded_inputs)
+            attn_output = Attention()([embedded_inputs, embedded_inputs, embedded_inputs])
 
             # Add a feed-forward layer
-            ff_output = Dense(units=self.units, activation=self.activation_fn1)(attn_output)
+            ff_output = Dense(units=128, activation=self.activation_fn1)(attn_output)
 
             # Add a global average pooling layer to summarize the extracted features
             avg_pooling = GlobalAveragePooling2D()(ff_output)
@@ -212,16 +219,16 @@ def CommitDiffModelFactory(
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply a bidirectional GRU to each context
-            gru_output = TimeDistributed(Bidirectional(GRU(units=self.units, return_sequences=True)))(embedded_inputs)
+            gru_output = TimeDistributed(Bidirectional(GRU(units=8, return_sequences=True)))(embedded_inputs)
 
             # Apply token-level attention
-            token_attn_output = MultiHeadAttention(num_heads=self.num_heads, key_dim=self.key_dim)(gru_output, gru_output)
+            token_attn_output = Attention()([gru_output, gru_output, gru_output])
 
             # Apply token-level global average pooling
             token_avg_pooling = TimeDistributed(GlobalAveragePooling1D())(token_attn_output)
 
             # Apply context-level attention
-            context_attn_output = MultiHeadAttention(num_heads=self.num_heads, key_dim=self.key_dim)(token_avg_pooling, token_avg_pooling)
+            context_attn_output = Attention()([token_avg_pooling, token_avg_pooling, token_avg_pooling])
 
             # Apply context-level global average pooling
             context_avg_pooling = GlobalAveragePooling1D()(context_attn_output)
@@ -233,7 +240,7 @@ def CommitDiffModelFactory(
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply multi-head self-attention to the input
-            attention_output = MultiHeadAttention(num_heads=self.num_heads, key_dim=self.key_dim)(embedded_inputs, embedded_inputs)
+            attention_output = Attention()([embedded_inputs, embedded_inputs, embedded_inputs])
 
             # Add a global average pooling layer to summarize the extracted features
             avg_pooling = GlobalAveragePooling2D()(attention_output)
@@ -248,13 +255,12 @@ def CommitDiffModelFactory(
             max_pooling = GlobalMaxPooling2D()(embedded_inputs)
 
             # Add a dense layer to capture the most significant features
-            dense_output = Dense(units=self.units, activation=self.activation_fn1)(max_pooling)
+            dense_output = Dense(units=128, activation=self.activation_fn1)(max_pooling)
 
             return dense_output
         
         def som_encoder(self, inputs):
-            som_output = SOMEncoder(context_size=self.context_size)(inputs)
-            return som_output
+            return SOMEncoderLayer(MAX_NODE_LOOKUP_NUM, self.embedding_dim, self.context_size, self.bag_size, 4, self.fixed_vector_size)(inputs)
 
         def capsule_encoder(self, inputs):
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
@@ -287,7 +293,7 @@ def CommitDiffModelFactory(
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply bidirectional LSTM layer
-            reshaped_inputs = tf.keras.layers.Reshape((self.example_size, self.context_size * self.embedding_dim))(embedded_inputs)
+            reshaped_inputs = tf.keras.layers.Reshape((self.bag_size, self.context_size * self.embedding_dim))(embedded_inputs)
 
             # Apply bidirectional LSTM layer
             x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=64, return_sequences=True))(reshaped_inputs)
@@ -370,13 +376,17 @@ def CommitDiffModelFactory(
             # Create SimSiam model
             x1 = Input(shape=self.input_shape)
             x2 = Input(shape=self.input_shape)
-            
-            x1 = tf.random.shuffle(x1)
-            x2 = tf.random.shuffle(x2)
+
+            # Define a lambda layer to shuffle the input tensors
+            shuffle_layer = Lambda(lambda x: tf.random.shuffle(x))
+
+            # Apply the shuffle layer to the input tensors
+            x1_shuffled = shuffle_layer(x1)
+            x2_shuffled = shuffle_layer(x2)
             
             # Encode the input twice using the same encoder
-            z1 = self.encoder(x1)
-            z2 = self.encoder(x2)
+            z1 = self.encoder(x1_shuffled)
+            z2 = self.encoder(x2_shuffled)
             
             # Predict a transformation of the first encoding
             p1 = Dense(units=self.fixed_vector_size, activation=self.activation_fn2)(z1)
@@ -389,14 +399,24 @@ def CommitDiffModelFactory(
                 z = tf.math.l2_normalize(z, axis=1)
                 return -tf.reduce_mean(tf.reduce_sum(p * z, axis=1))
             
-            loss = D(p1, z2) / 2 + D(p2, z1) / 2
-            
+            def siamese_loss(y_true, y_pred):
+                p1, p2, z1, z2 = y_pred[:, 0:self.fixed_vector_size], y_pred[:, self.fixed_vector_size:self.fixed_vector_size * 2], y_pred[:, self.fixed_vector_size * 2:self.fixed_vector_size * 3], y_pred[:, self.fixed_vector_size * 3:]
+                return D(p1, z2) / 2 + D(p2, z1) / 2
+
+            # Concatenate the outputs
+            concatenated_outputs = Concatenate(axis=-1)([p1, p2, z1, z2])
+
             # Define the model
-            model = tf.keras.Model(inputs=[x1,x2], outputs=loss)
-            
+            model = tf.keras.Model(inputs=[x1, x2], outputs=concatenated_outputs)
+
+            lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.base_lr * 2, self.unsupervised_data_size)
+
+            # Define the optimizer with SGD, weight decay, and momentum
+            optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
+
             # Compile the model
-            model.compile(optimizer=self.optimizer, loss=lambda _, loss: loss)
-            
+            model.compile(optimizer=optimizer, loss=siamese_loss)
+
             return model
 
         def build_binary_classification_model(self):
@@ -431,7 +451,7 @@ def CommitDiffModelFactory(
             model = tf.keras.Model(inputs=[name_input, timestamp_input, message_input, bag1_input, bag2_input], outputs=binary_classification)
             
             # Compile model
-            model.compile(optimizer=self.optimizer, loss="binary_crossentropy")
+            model.compile(optimizer=self.optimizer, loss=self.loss_fn)
             
             return model
 
