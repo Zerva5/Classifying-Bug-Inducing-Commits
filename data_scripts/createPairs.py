@@ -1,8 +1,42 @@
 import pandas as pd
+import numpy as np
 import sys
 import os
 import git
 import random
+from typing import Optional
+import cProfile
+import tqdm
+
+def getCommitLookup(rootPath: str, maxFiles: int|None = None, maxDiffLines: int|None = None):
+    df = pd.read_csv(os.path.join(rootPath, 'all_apache_commits.csv'))
+
+    if(maxFiles is not None):
+        df = df.loc[df['files_changed'] <= maxFiles]
+        
+    if(maxDiffLines is not None):
+        df = df.loc[df['diff_line_count'] <= maxDiffLines]
+
+    print("commit lookup size:", df.shape[0])
+
+    df.reset_index(drop=True, inplace=True)
+
+    df['pickle_index'] = df.index
+
+    df = df.set_index('sha')
+
+    return df    
+
+def splitPairsAndCombine(df):
+    df1 = pd.DataFrame()
+    df2 = pd.DataFrame()
+
+    df1['sha'] = df['bug_hash']
+    df1['repo'] = df['repo']
+    df2['sha'] = df['fix_hash']
+    df2['repo'] = df['repo']
+
+    return pd.concat([df1, df2])
 
 def fetch_apachejit(rootPath: str):
     dataDir = os.fsencode(rootPath + "/apachejit/data")
@@ -15,7 +49,7 @@ def fetch_apachejit(rootPath: str):
         filename = os.fsdecode(file)
         if "commit_links" in filename:
             df = pd.read_csv(rootPath + "/apachejit/data/" + filename)
-            df['project'] = "apache/" + df['project'].str.lower()
+            df['project'] = "apache-" + df['project'].str.lower()
             #df['owner'] = 'apache'
             df.rename(columns={'project':'repo'},  inplace=True)
             df = df[['fix_hash', 'bug_hash', 'repo']]
@@ -61,17 +95,9 @@ def fetch_icse2021(rootPath: str):
 
     return df
 
-def getAllPairs(rootPath):
-    dfList = []
 
-    dfList.append(fetch_icse2021(rootPath))
-    
-    # dfList.append(fetch_apachejit(rootPath))
 
-    df = pd.concat(dfList, ignore_index=True)
-    df['Y'] = 1
 
-    return df
 
 def fillRow(pairs, rInd, iInd, classification):
     row = {}
@@ -108,10 +134,6 @@ def negativeRandom(pairs, n):
     df = pd.concat(dfList)
 
     return df
-
-def getRandomBugFromList(p, li):
-    pass
-
 
 def negativeRandomSameRepo(pairs, searchPairs, n):
     dfList = []
@@ -169,7 +191,53 @@ def createNegativeExamples(pairs, searchPairs, maxNegatives):
 
     return df
 
-    # first thing is just going to be getting n random 
+    # first thing is just going to be getting n random
+
+def getPositivePairs(rootPath,  numSamples: Optional[int] = None):
+    dfList = []
+    optionsList = []
+
+    repoBlacklist = []
+
+    dfList.append(fetch_icse2021(rootPath))
+    
+    dfList.append(fetch_apachejit(rootPath))
+
+    ## Concat all positive pairs
+    df = pd.concat(dfList, ignore_index=True)
+
+    #df = splitPairsAndCombine(df)
+    df['Y'] = 1
+
+    repoStrings = df['repo'].unique()
+    repoDict = {}
+    for r in repoStrings:
+        try:
+            repoDict[r] = git.Repo(os.path.join(rootPath, "../clones", r.replace('/', '-')))
+            
+        except:
+            repoBlacklist.append(r)
+
+    # Don't include repos that aren't clones
+    df = df[~df['repo'].isin(repoBlacklist)]
+
+    df['bug_repo'] = df.loc[:, 'repo']
+    df['fix_repo'] = df.loc[:, 'repo']
+
+    df = df.drop(['repo'], axis=1)
+
+    if(numSamples is not None):
+        df = df.tail(numSamples) # limit number
+
+    return df    
+
+def exportSupervisedCommits(rootPath, outputName):
+    pairs = getPositivePairs(rootPath)
+
+    df = splitPairsAndCombine(pairs)
+
+    df.to_csv(os.path.join(rootPath,outputName), index=False)
+    
 
 def main():
     if(len(sys.argv) != 5):
@@ -180,28 +248,44 @@ def main():
     rootPath = sys.argv[1]
     outputName = sys.argv[2]
 
-    df = getAllPairs(rootPath).head(20000).sample(frac=1, random_state=1).reset_index()
-    # df = fetch_apachejit(rootPath).sample(frac=1, random_state=1).reset_index() # fetch and shuffle
-    df['bug_repo'] = df.loc[:, 'repo']
-    df['fix_repo'] = df.loc[:, 'repo']
+    optionsList = []
     
-    allSamples = df.head(numSamples * 2)
+    ## Setup positive pairs
+    posPairs = getPositivePairs(rootPath)
+
+    all_apache_commits = getCommitLookup(rootPath, maxFiles=8, maxDiffLines=80)
+
+    #bugGood = posPairs[(posPairs['bug_hash'].isin(all_apache_commits.index))]
+    #fixGood = posPairs[(posPairs['fix_hash'].isin(all_apache_commits.index))]
+
+    posPairs = posPairs[(posPairs['bug_hash'].isin(all_apache_commits.index)) & (posPairs['fix_hash'].isin(all_apache_commits.index))]
+
+    ## Getting the pickle index for the bug and fix commits
+    posPairs = posPairs.merge(all_apache_commits, how='inner', right_on=['sha', 'repo'], left_on=['bug_hash', 'bug_repo'])
+    posPairs = posPairs.drop(columns=['repo', 'files_changed', 'diff_line_count'])
+    posPairs = posPairs.rename(columns={"pickle_index":"bug_index"})
     
-    df = df.head(numSamples) # limit number 
-
-    print("positive examples:", df.shape[0])
-
-    withNegative = createNegativeExamples(df, allSamples, numNegatives)
-
-    print("negative examples:", withNegative.shape[0] - df.shape[0])
-    print("total examples:", withNegative.shape[0])
-
-    if not os.path.exists(os.path.join(rootPath, "pairs_output")):
-        os.makedirs(os.path.join(rootPath, "pairs_output"))
+    posPairs = posPairs.merge(all_apache_commits, how='inner', right_on=['sha', 'repo'], left_on=['fix_hash', 'bug_repo'])
+    posPairs = posPairs.drop(columns=['repo', 'files_changed', 'diff_line_count'])
+    posPairs = posPairs.rename(columns={"pickle_index":"fix_index"})
     
-    withNegative.to_csv(os.path.join(rootPath, "pairs_output", outputName), index=False)
+
+    print("positive examples:", posPairs.shape[0])
+
+    posPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_positive_pairs.csv"))
+
+    #withNegative = createNegativeExamples(posPairs, allSamples, numNegatives)
+
+    #print("negative examples:", withNegative.shape[0] - posPairs.shape[0])
+    #print("total examples:", withNegative.shape[0])
+
+    #if not os.path.exists(os.path.join(rootPath, "pairs_output")):
+        #os.makedirs(os.path.join(rootPath, "pairs_output"))
+    
+    #withNegative.to_csv(os.path.join(rootPath, "pairs_output", outputName), index=False)
 
 
 
 if __name__ == "__main__":
+    #cProfile.run('main()', sort='cumtime')
     main()
