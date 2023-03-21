@@ -9,12 +9,13 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import tensorflow as tf
 from tensorflow.keras.layers import (
     Input, Dense, LSTM, Attention, Concatenate, Layer,
-    Embedding, Dot, Softmax, TimeDistributed, Multiply,
-    Lambda, LayerNormalization, MultiHeadAttention,
-    Add, Masking, GlobalMaxPooling1D, GlobalMaxPooling2D, Reshape, MaxPooling1D, MaxPooling2D,
-    Dropout, Conv1D, Conv2D, Bidirectional, GRU, ConvLSTM2D, Flatten, Permute, GlobalAveragePooling1D, GlobalAveragePooling2D
+    Embedding, TimeDistributed, Multiply,
+    Lambda, Add, Masking, GlobalMaxPooling2D, Reshape, MaxPooling1D, MaxPooling2D,
+    Dropout, Conv1D, Conv2D, Bidirectional, GRU, Flatten, GlobalAveragePooling1D, GlobalAveragePooling2D
 )
 from tensorflow.keras.initializers import RandomUniform
+from tensorflow.keras import mixed_precision
+from gradient_accumulator import GradientAccumulateModel
 
 from vocab import MAX_NODE_LOOKUP_NUM
 
@@ -24,6 +25,8 @@ def CommitDiffModelFactory(
     CONTEXT_SIZE = 16,
     OUTPUT_SIZE = 128
 ):
+
+
     
     class SOMEncoderLayer(Layer):
         def __init__(self, max_node_lookup_num, embedding_dim, context_size, bag_size, som_grid_size, fixed_vector_size):
@@ -153,7 +156,9 @@ def CommitDiffModelFactory(
             self.weight_decay = 0.0001
             self.momentum = 0.9
             self.unsupervised_data_size = unsupervised_data_size
-
+            self.siam_batch_size = 64
+            self.steps_per_update = 4
+            
             self.encoder = None
             self.siam_model = None
             self.binary_classification_model = None
@@ -409,10 +414,13 @@ def CommitDiffModelFactory(
             # Define the model
             model = tf.keras.Model(inputs=[x1, x2], outputs=concatenated_outputs)
 
-            lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.base_lr * 2, self.unsupervised_data_size)
+            lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.base_lr * (self.siam_batch_size / self.steps_per_update)/256, self.unsupervised_data_size)
 
             # Define the optimizer with SGD, weight decay, and momentum
             optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
+            # optimizer = GradientAccumulateOptimizer(accum_steps=self.steps_per_update, optimizer=optimizer)
+
+            model = GradientAccumulateModel(accum_steps=self.steps_per_update, inputs=model.input, outputs=model.output)
 
             # Compile the model
             model.compile(optimizer=optimizer, loss=siamese_loss)
@@ -449,14 +457,14 @@ def CommitDiffModelFactory(
             
             # Define model
             model = tf.keras.Model(inputs=[name_input, timestamp_input, message_input, bag1_input, bag2_input], outputs=binary_classification)
-            
+
             # Compile model
             model.compile(optimizer=self.optimizer, loss=self.loss_fn)
             
             return model
 
-        def fit_siam(self, X_train, epochs, batch_size, verbose=0):        
-            self.siam_model.fit([X_train, X_train], [X_train, X_train], epochs=epochs, batch_size=batch_size, verbose=verbose)
+        def fit_siam(self, X_train, epochs, verbose=0):        
+            self.siam_model.fit([X_train, X_train], [X_train, X_train], epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose)
             
         def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0):
 
