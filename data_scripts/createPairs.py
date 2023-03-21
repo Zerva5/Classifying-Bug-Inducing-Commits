@@ -9,6 +9,18 @@ import cProfile
 import tqdm
 
 def getCommitLookup(rootPath: str, maxFiles: int|None = None, maxDiffLines: int|None = None):
+    """
+    Reads a CSV file with commit data and returns a Pandas DataFrame with selected columns.
+
+    Args:
+    - rootPath (str): A string representing the path to the directory containing the CSV file.
+    - maxFiles (int, optional): An integer representing the maximum number of files changed in a commit.
+    - maxDiffLines (int, optional): An integer representing the maximum number of diff lines in a commit.
+
+    Returns:
+    - pd.DataFrame: A Pandas DataFrame with columns sha, repo, files_changed, diff_line_count, and pickle_index.
+    """
+
     df = pd.read_csv(os.path.join(rootPath, 'all_apache_commits.csv'))
 
     if(maxFiles is not None):
@@ -20,17 +32,25 @@ def getCommitLookup(rootPath: str, maxFiles: int|None = None, maxDiffLines: int|
     print("commit lookup size:", df.shape[0])
 
     df.reset_index(drop=True, inplace=True)
-
     df['pickle_index'] = df.index
-
     df = df.set_index('sha')
 
     return df    
 
+
 def splitPairsAndCombine(df):
+    """
+    Combines two columns of commit hashes into a single column and returns a new DataFrame.
+
+    Args:
+    - df (pd.DataFrame): A Pandas DataFrame with columns bug_hash, repo, and fix_hash.
+
+    Returns:
+    - pd.DataFrame: A Pandas DataFrame with columns sha and repo.
+    """
+
     df1 = pd.DataFrame()
     df2 = pd.DataFrame()
-
     df1['sha'] = df['bug_hash']
     df1['repo'] = df['repo']
     df2['sha'] = df['fix_hash']
@@ -38,11 +58,20 @@ def splitPairsAndCombine(df):
 
     return pd.concat([df1, df2])
 
+
 def fetch_apachejit(rootPath: str):
+    """
+    Reads multiple CSV files with commit data and returns a new DataFrame with selected columns.
+
+    Args:
+    - rootPath (str): A string representing the path to the directory containing the CSV files.
+
+    Returns:
+    - pd.DataFrame: A Pandas DataFrame with columns fix_hash, bug_hash, repo, and Y label.
+    """
+    
     dataDir = os.fsencode(rootPath + "/apachejit/data")
-
     dfList = []
-
     totalRows = 0
 
     for file in os.listdir(dataDir):
@@ -61,11 +90,20 @@ def fetch_apachejit(rootPath: str):
     df['Y'] = 1
     return df
 
+
 def fetch_icse2021(rootPath: str):
+    """
+    Reads a JSON file with commit data and returns a new DataFrame with selected columns.
+
+    Args:
+    - rootPath (str): A string representing the path to the directory containing the JSON file.
+
+    Returns:
+    - pd.DataFrame: A Pandas DataFrame with columns fix_hash, bug_hash, repo, and Y.
+    """
+    
     dataDirPath = rootPath + "/icse2021-szz-replication-package/detailed-database/"
-
     dataDF = pd.read_json(dataDirPath + "overall.json")
-
     rows = []
 
     for i, _ in dataDF.iterrows():
@@ -90,42 +128,58 @@ def fetch_icse2021(rootPath: str):
             rows.append((fix_hash, bug_hash, repo))
 
     df = pd.DataFrame(rows, columns=['fix_hash', 'bug_hash', 'repo'])
-
     df['Y'] = 1
 
     return df
 
 
-
-
-
 def fillRow(pairs, rInd, iInd, classification):
+    """
+    Returns a new dictionary representing a row in a DataFrame.
+
+    Args:
+    - pairs (pd.DataFrame): A Pandas DataFrame with columns fix_hash, bug_hash, and repo.
+    - rInd (int): An integer representing the index of the row to fill.
+    - iInd (int): An integer representing the index of the row to use as the "fix" commit.
+    - classification (int): An integer representing the classification of the row (0 or 1).
+
+    Returns:
+    - dict: A dictionary representing a row in a DataFrame.
+    """
+    
     row = {}
     row["fix_hash"] = pairs.iloc[iInd]['fix_hash']
     row['fix_repo'] = pairs.iloc[iInd]['repo']
     row["bug_hash"] = pairs.iloc[rInd]['bug_hash']
     row['bug_repo'] = pairs.iloc[rInd]['repo']
-    
     row['Y'] = classification
 
     return row
 
-def negativeRandom(pairs, n):
-    numPairs = pairs.shape[0]
 
+def negativeRandom(pairs, n):
+    """
+    Returns a new DataFrame with randomly selected "negative" examples.
+
+    Args:
+    - pairs (pd.DataFrame): A Pandas DataFrame with columns fix_hash, bug_hash, and repo.
+    - n (int): An integer representing the number of negative examples to select for each row in pairs.
+
+    Returns:
+    - pd.DataFrame: A Pandas DataFrame with columns fix_hash, bug_hash, and Y label.
+    """
+
+    numPairs = pairs.shape[0]
     dfList = []
-    
     
     for i in range(numPairs):
         newRows = []
         fixSha = pairs.iloc[i]['fix_hash']
-
         usedIndexes = []
         
         for r in range(n):
             row = {}
             rIndex = random.choice([x for x in range(numPairs) if x != i and x not in usedIndexes])
-
             newRows.append(fillRow(pairs, rIndex, i, 0))
 
         newDF = pd.DataFrame(newRows)
@@ -135,7 +189,20 @@ def negativeRandom(pairs, n):
 
     return df
 
+
 def negativeRandomSameRepo(pairs, searchPairs, n):
+    """
+    Returns a new DataFrame with randomly selected "negative" examples that are in the same repository as the "positive" example.
+
+    Args:
+    - pairs (pd.DataFrame): A Pandas DataFrame with columns fix_hash, bug_hash, and repo.
+    - searchPairs (pd.DataFrame): A Pandas DataFrame with columns fix_hash, bug_hash, and repo
+    - n (int): An integer representing the number of negative examples to select for each row in pairs.
+
+    Returns:
+    - pd.DataFrame: A Pandas DataFrame with columns fix_hash, bug_hash, and Y label.
+    """
+
     dfList = []
     repoGroups = {}     ## To cache the dataframes that are of the same repo
 
@@ -176,8 +243,19 @@ def negativeRandomSameRepo(pairs, searchPairs, n):
     return df
     
             
-
 def createNegativeExamples(pairs, searchPairs, maxNegatives):
+    """
+    Returns a new DataFrame with a combination of "positive" and "negative" examples.
+
+    Args:
+    - pairs (pd.DataFrame): A Pandas DataFrame with columns fix_hash, bug_hash, and repo.
+    - searchPairs (pd.DataFrame): A Pandas DataFrame with columns fix_hash, bug_hash, and repo.
+    - maxNegatives (int): An integer representing the maximum number of "negative" examples to select for each "positive" example.
+
+    Returns:
+    - pd.DataFrame: A Pandas DataFrame with columns fix_hash, bug_hash, and Y label.
+    """
+
     # Find the n closest commits either ahead or behind the correct commit that edit at least one of the same files as the correct commit
     # Find other commits that we know are bug fixing and edit the same files as the correct commit but are not the correct commit.
     # Commits made after the bug fixing commit
@@ -186,21 +264,30 @@ def createNegativeExamples(pairs, searchPairs, maxNegatives):
     # Be interesting to see how many bug fixing commits don't reference files in the bug creating commit
     #print(pairs)
     df = pd.concat((pairs, negativeRandomSameRepo(pairs, searchPairs, maxNegatives)))
-
     df = df.drop('repo', axis=1).drop('index', axis=1) # get rid of un needed columns
 
     return df
 
     # first thing is just going to be getting n random
 
+
 def getPositivePairs(rootPath,  numSamples: Optional[int] = None):
+    """
+    Returns a new DataFrame with "positive" examples.
+
+    Args:
+    - rootPath (str): A string representing the path to the directory containing the data files.
+    - numSamples (int, optional): An integer representing the maximum number of examples to include in the DataFrame.
+
+    Returns:
+    - pd.DataFrame: A Pandas DataFrame with columns fix_hash, bug_hash, repo, bug_repo, fix_repo, and Y label.
+    """
+
     dfList = []
     optionsList = []
-
     repoBlacklist = []
 
     dfList.append(fetch_icse2021(rootPath))
-    
     dfList.append(fetch_apachejit(rootPath))
 
     ## Concat all positive pairs
@@ -231,11 +318,18 @@ def getPositivePairs(rootPath,  numSamples: Optional[int] = None):
 
     return df    
 
+
 def exportSupervisedCommits(rootPath, outputName):
+    """
+    Exports a CSV file with "positive" and "negative" examples.
+
+    Args:
+    - rootPath (str): A string representing the path to the directory containing the data files.
+    - outputName (str): A string representing the name of the output CSV file.
+    """
+
     pairs = getPositivePairs(rootPath)
-
     df = splitPairsAndCombine(pairs)
-
     df.to_csv(os.path.join(rootPath,outputName), index=False)
     
 
@@ -269,7 +363,6 @@ def main():
     posPairs = posPairs.drop(columns=['repo', 'files_changed', 'diff_line_count'])
     posPairs = posPairs.rename(columns={"pickle_index":"fix_index"})
     
-
     print("positive examples:", posPairs.shape[0])
 
     posPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_positive_pairs.csv"))
@@ -283,7 +376,6 @@ def main():
         #os.makedirs(os.path.join(rootPath, "pairs_output"))
     
     #withNegative.to_csv(os.path.join(rootPath, "pairs_output", outputName), index=False)
-
 
 
 if __name__ == "__main__":
