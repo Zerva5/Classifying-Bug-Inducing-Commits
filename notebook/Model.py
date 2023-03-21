@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import gc
 
 #Disable import warnings for tensorflow
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -14,8 +15,9 @@ from tensorflow.keras.layers import (
     Dropout, Conv1D, Conv2D, Bidirectional, GRU, Flatten, GlobalAveragePooling1D, GlobalAveragePooling2D
 )
 from tensorflow.keras.initializers import RandomUniform
-from tensorflow.keras import mixed_precision
 from gradient_accumulator import GradientAccumulateModel
+from tensorflow.keras.callbacks import Callback
+from tensorflow.keras import backend as k
 
 from vocab import MAX_NODE_LOOKUP_NUM
 
@@ -26,6 +28,10 @@ def CommitDiffModelFactory(
     OUTPUT_SIZE = 128
 ):
 
+    class ClearMemory(Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            gc.collect()
+            k.clear_session()
 
     
     class SOMEncoderLayer(Layer):
@@ -156,8 +162,8 @@ def CommitDiffModelFactory(
             self.weight_decay = 0.0001
             self.momentum = 0.9
             self.unsupervised_data_size = unsupervised_data_size
-            self.siam_batch_size = 64
-            self.steps_per_update = 4
+            self.siam_batch_size = 16
+            self.steps_per_update = 8
             
             self.encoder = None
             self.siam_model = None
@@ -423,7 +429,7 @@ def CommitDiffModelFactory(
             model = GradientAccumulateModel(accum_steps=self.steps_per_update, inputs=model.input, outputs=model.output)
 
             # Compile the model
-            model.compile(optimizer=optimizer, loss=siamese_loss)
+            model.compile(optimizer=optimizer, loss=siamese_loss, run_eagerly=True)
 
             return model
 
@@ -464,7 +470,7 @@ def CommitDiffModelFactory(
             return model
 
         def fit_siam(self, X_train, epochs, verbose=0):        
-            self.siam_model.fit([X_train, X_train], [X_train, X_train], epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose)
+            self.siam_model.fit([X_train, X_train], [X_train, X_train], epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, callbacks=ClearMemory())
             
         def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0):
 
