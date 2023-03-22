@@ -56,7 +56,7 @@ def raw_to_padded(bag_of_contexts, BAG_SIZE = 256, CONTEXT_SIZE = 16):
     if(len(bag_of_contexts) > BAG_SIZE):
         k = len(bag_of_contexts) // BAG_SIZE
         indices = np.arange(0, len(bag_of_contexts), k)[:BAG_SIZE]
-        return bag_of_contexts[indices]
+        return [bag_of_contexts[i] for i in indices]
 
     blank_path = ([0] * CONTEXT_SIZE)
 
