@@ -48,13 +48,13 @@ def load_commit_lookup(pickle_dir = '../data/commit_lookups', verbose = True, ma
                                 if(max_commits != None):
                                     pbar.update(1)
 
+                        if(verbose):
+                            print("Appending pickle of length:", len(data.keys()), ", new dict length:", len(COMMIT_DATA_LOOKUP.keys()))
 
                         f.close()
                         del data
                         gc.collect()
                         
-                        if(verbose):
-                            print("Appending pickle of length:", len(data.keys()), ", new dict length:", len(COMMIT_DATA_LOOKUP.keys()))
                     except Exception as e:
                         print(pickle_file, e)
                 
