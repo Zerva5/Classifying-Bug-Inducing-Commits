@@ -34,9 +34,9 @@ def _preload(max_commits = None, max_commit_bag_size = None):
         COMMIT_LOOKUP = load_commit_lookup(max_commits = max_commits, max_commit_bag_size = max_commit_bag_size)
 
 def _unload():
-    global COMMIT_DATA_LOOKUP
-    del COMMIT_DATA_LOOKUP
-    COMMIT_DATA_LOOKUP = {}
+    global COMMIT_LOOKUP
+    del COMMIT_LOOKUP
+    COMMIT_LOOKUP = {}
     gc.collect()
 
 ####################################################################################################################
@@ -56,7 +56,9 @@ def raw_to_padded(bag_of_contexts, BAG_SIZE = 256, CONTEXT_SIZE = 16):
         return bag_of_contexts
 
     if(len(bag_of_contexts) > BAG_SIZE):
-        return random.sample(bag_of_contexts, BAG_SIZE)
+        k = len(bag_of_contexts) // BAG_SIZE
+        indices = np.arange(0, len(bag_of_contexts), k)[:BAG_SIZE]
+        return [bag_of_contexts[i] for i in indices]
 
     blank_path = ([0] * CONTEXT_SIZE)
 
