@@ -37,7 +37,7 @@ def load_commit_lookup(pickle_dir = '../data/commit_lookups', verbose = True, ma
                 with open(pickle_file, 'rb') as f:
                     try:
                         data = pickle.load(f)
-
+                        data_size = len(data)
                         for sha in list(data):
                             if max_commits != None and len(COMMIT_DATA_LOOKUP) >= max_commits:
                                 return COMMIT_DATA_LOOKUP
@@ -49,7 +49,7 @@ def load_commit_lookup(pickle_dir = '../data/commit_lookups', verbose = True, ma
                                     pbar.update(1)
 
                         if(verbose):
-                            print("Appending pickle of length:", len(data.keys()), ", new dict length:", len(COMMIT_DATA_LOOKUP.keys()))
+                            print("Appending pickle of length:", data_size, ", new dict length:", len(COMMIT_DATA_LOOKUP.keys()))
 
                         f.close()
                         del data
