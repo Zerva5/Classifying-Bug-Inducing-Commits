@@ -9,7 +9,10 @@ def load_commit_lookup(pickle_dir = '../data/commit_lookups', verbose = True, ma
 
     COMMIT_DATA_LOOKUP = {}
 
-    iterator = tqdm(os.listdir(pickle_dir))
+    files = os.listdir(pickle_dir)
+    files.sort()
+
+    iterator = tqdm(files)
     
     # loop through all the files in the directory
     for file_name in iterator:

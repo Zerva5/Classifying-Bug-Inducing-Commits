@@ -17,8 +17,8 @@ from Commit import CommitFactory
 Commit = CommitFactory()
 
 #############################
-POSITIVE_CSV_FILE = "./icse_java_positive_pairs.csv"
-NEGATIVE_CSV_FILE = "./icse_java_negative_pairs.csv"
+POSITIVE_CSV_FILE = "./apache_positive_pairs.csv"
+NEGATIVE_CSV_FILE = "./apache_negative_pairs.csv"
 #############################
 
 global COMMIT_LOOKUP
