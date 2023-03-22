@@ -3,6 +3,7 @@ import pickle
 from tqdm.auto import tqdm
 from Commit import CommitFactory
 Commit = CommitFactory()
+import gc
 
 #TODO: Make this process more efficient @lucas
 def load_commit_lookup(pickle_dir = '../data/commit_lookups', verbose = True, max_commits = None, max_commit_bag_size = None):
@@ -12,35 +13,52 @@ def load_commit_lookup(pickle_dir = '../data/commit_lookups', verbose = True, ma
     files = os.listdir(pickle_dir)
     files.sort()
 
-    iterator = tqdm(files)
-    
-    # loop through all the files in the directory
-    for file_name in iterator:
 
-        # check if the file is a pickle
-        if file_name.endswith('.pickle'):
+    if(max_commits == None):
+        total = len(files)
+        desc = "Loading commit lookup files"
+    else:
+        total = max_commits
+        desc = "Loading commit lookups"
+    with tqdm(total=total, desc=desc) as pbar:
 
-            # get the full path of the pickle file
-            pickle_file = os.path.join(pickle_dir, file_name)
+        # loop through all the files in the directory
+        for file_name in files:
 
-            if(verbose):
-                print("Loading file", pickle_file)
+            # check if the file is a pickle
+            if file_name.endswith('.pickle'):
 
-            with open(pickle_file, 'rb') as f:
-                try:
-                    data = pickle.load(f)
+                # get the full path of the pickle file
+                pickle_file = os.path.join(pickle_dir, file_name)
 
-                    for sha in data:
-                        if max_commits != None and len(COMMIT_DATA_LOOKUP) >= max_commits:
-                            iterator.close()
-                            return COMMIT_DATA_LOOKUP
+                if(verbose):
+                    print("Loading file", pickle_file)
 
-                        if(max_commit_bag_size == None or len(data[sha].bag_of_contexts) <= max_commit_bag_size):
-                            COMMIT_DATA_LOOKUP[sha] = data[sha]
+                with open(pickle_file, 'rb') as f:
+                    try:
+                        data = pickle.load(f)
 
-                    if(verbose):
-                        print("Appending pickle of length:", len(data.keys()), ", new dict length:", len(COMMIT_DATA_LOOKUP.keys()))
-                except Exception as e:
-                    print(pickle_file, e)
+                        for sha in list(data):
+                            if max_commits != None and len(COMMIT_DATA_LOOKUP) >= max_commits:
+                                return COMMIT_DATA_LOOKUP
+
+                            if(max_commit_bag_size == None or len(data[sha].bag_of_contexts) <= max_commit_bag_size):
+                                COMMIT_DATA_LOOKUP[sha] = data[sha]
+                                del data[sha]
+                                if(max_commits != None):
+                                    pbar.update(1)
+
+
+                        f.close()
+                        del data
+                        gc.collect()
+                        
+                        if(verbose):
+                            print("Appending pickle of length:", len(data.keys()), ", new dict length:", len(COMMIT_DATA_LOOKUP.keys()))
+                    except Exception as e:
+                        print(pickle_file, e)
+                
+                if(max_commits == None):
+                    pbar.update(1)
 
     return COMMIT_DATA_LOOKUP

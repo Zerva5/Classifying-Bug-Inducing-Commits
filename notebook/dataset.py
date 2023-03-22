@@ -11,6 +11,7 @@ from tqdm.auto import tqdm
 import random
 import pandas as pd
 import numpy as np
+import gc
 from sklearn.model_selection import train_test_split
 
 from Commit import CommitFactory
@@ -29,6 +30,12 @@ def _preload(max_commits = None, max_commit_bag_size = None):
     if len(COMMIT_LOOKUP) == 0:
         print("Loading Commit lookup table")
         COMMIT_LOOKUP = load_commit_lookup(max_commits = max_commits, max_commit_bag_size = max_commit_bag_size)
+
+def _unload():
+    global COMMIT_DATA_LOOKUP
+    del COMMIT_DATA_LOOKUP
+    COMMIT_DATA_LOOKUP = {}
+    gc.collect()
 
 ####################################################################################################################
 
