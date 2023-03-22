@@ -32,9 +32,9 @@ def _preload(max_commits = None, max_commit_bag_size = None):
         COMMIT_LOOKUP = load_commit_lookup(max_commits = max_commits, max_commit_bag_size = max_commit_bag_size)
 
 def _unload():
-    global COMMIT_DATA_LOOKUP
-    del COMMIT_DATA_LOOKUP
-    COMMIT_DATA_LOOKUP = {}
+    global COMMIT_LOOKUP
+    del COMMIT_LOOKUP
+    COMMIT_LOOKUP = {}
     gc.collect()
 
 ####################################################################################################################
