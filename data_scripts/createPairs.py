@@ -6,7 +6,7 @@ import git
 import random
 from typing import Optional
 import cProfile
-import tqdm
+from tqdm import tqdm
 
 def getCommitLookup(rootPath: str, maxFiles: int|None = None, maxDiffLines: int|None = None):
     """
@@ -23,6 +23,8 @@ def getCommitLookup(rootPath: str, maxFiles: int|None = None, maxDiffLines: int|
 
     df = pd.read_csv(os.path.join(rootPath, 'all_apache_commits.csv'))
 
+    print("raw search size", df.shape[0])
+
     if(maxFiles is not None):
         df = df.loc[df['files_changed'] <= maxFiles]
         
@@ -33,7 +35,7 @@ def getCommitLookup(rootPath: str, maxFiles: int|None = None, maxDiffLines: int|
 
     df.reset_index(drop=True, inplace=True)
     df['pickle_index'] = df.index
-    df = df.set_index('sha')
+    #df = df.set_index('sha')
 
     return df    
 
@@ -148,9 +150,9 @@ def fillRow(pairs, rInd, iInd, classification):
     """
     
     row = {}
-    row["fix_hash"] = pairs.iloc[iInd]['fix_hash']
+    row["fix_hash"] = pairs.iloc[iInd]['sha']
     row['fix_repo'] = pairs.iloc[iInd]['repo']
-    row["bug_hash"] = pairs.iloc[rInd]['bug_hash']
+    row["bug_hash"] = pairs.iloc[rInd]['sha']
     row['bug_repo'] = pairs.iloc[rInd]['repo']
     row['Y'] = classification
 
@@ -189,55 +191,77 @@ def negativeRandom(pairs, n):
 
     return df
 
-
 def negativeRandomSameRepo(pairs, searchPairs, n):
     """
     Returns a new DataFrame with randomly selected "negative" examples that are in the same repository as the "positive" example.
 
     Args:
-    - pairs (pd.DataFrame): A Pandas DataFrame with columns fix_hash, bug_hash, and repo.
-    - searchPairs (pd.DataFrame): A Pandas DataFrame with columns fix_hash, bug_hash, and repo
+    - pairs (pd.DataFrame): A Pandas DataFrame with columns fix_hash, bug_hash, fix_repo, bug_repo, bug_index, fix_index, and repo.
+    - searchPairs (pd.DataFrame): A Pandas DataFrame with columns sha, repo, and pickle_index
     - n (int): An integer representing the number of negative examples to select for each row in pairs.
 
     Returns:
-    - pd.DataFrame: A Pandas DataFrame with columns fix_hash, bug_hash, and Y label.
+    - pd.DataFrame: A Pandas DataFrame with columns fix_hash, bug_hash, fix_repo, bug_repo, fix_index, bug_index, and Y label.
     """
 
-    dfList = []
-    repoGroups = {}     ## To cache the dataframes that are of the same repo
-
-    for i, row in pairs.iterrows():
+    def get_negative_examples(row, searchPairs, n):
         tempn = n
         newRows = []
-        
-        usedIndexes = []
 
-        i_fixHash = row['fix_hash']
-        i_repo = row['repo']
-        i_bugHash =  row['bug_hash']
+        i_fixHash = row.fix_hash
+        i_repo = row.fix_repo
+        i_bugHash = row.bug_hash
+        i_fixIndex = row.fix_index
 
-        # If we haven't selected the subset of rows for a given repo then cache them
-        if i_repo not in repoGroups:
-            repoGroups[i_repo] = searchPairs[(searchPairs["repo"] == i_repo)]
+        selectPairs = searchPairs.loc[(searchPairs["repo"] == i_repo) & (searchPairs['sha'] != i_fixHash) & (searchPairs['sha'] != i_bugHash)].sample(n=n, replace=True).rename(columns={'repo': 'bug_repo', 'sha': 'bug_hash', 'pickle_index': 'bug_index'}).drop(columns=['files_changed', 'diff_line_count'])
+        selectPairs['fix_hash'] = i_fixHash
+        selectPairs['fix_repo'] = i_repo
+        selectPairs['fix_index'] = i_fixIndex
 
-        selectPairs = repoGroups[i_repo].loc[(searchPairs['fix_hash'] != i_fixHash) & (searchPairs['bug_hash'] != i_bugHash)]
+        return selectPairs
 
-        # if there aren't enough valid options to choose n things from then reduce n
-        if(selectPairs.shape[0] < n):
-            tempn = selectPairs.shape[0]
+    dfList = [get_negative_examples(row, searchPairs, n) for row in tqdm(pairs.itertuples(), total=len(pairs))]
+    df = pd.concat(dfList)
 
-        for r in range(tempn):
+    return df
 
-            # Select random index from our valid pairs
-            rIndex = random.choice(selectPairs.index)
 
-            newRows.append(fillRow(searchPairs, rIndex, i, 0))
+def negativeDifferentFixSameRepo(pairs, n):
+    """
+    Returns a new DataFrame with randomly selected "negative" examples that are in the same repository as the "positive" example and
+    use a bug that is paired with a different fix in the same repository.
 
-        # Create a dataframe from these new rows and then append that df to a list, one df per "good pair"
-        newDF = pd.DataFrame(newRows)
-        dfList.append(newDF)
+    Args:
+    - pairs (pd.DataFrame): A Pandas DataFrame with columns fix_hash, bug_hash, fix_repo, bug_repo, bug_index, fix_index, and repo.
+    - n (int): An integer representing the number of negative examples to select for each row in pairs.
 
-    #concat the whole thing together
+    Returns:
+    - pd.DataFrame: A Pandas DataFrame with columns fix_hash, bug_hash, fix_repo, bug_repo, fix_index, bug_index, and Y label.
+    """
+
+    def get_negative_examples(row, pairs, n):
+        tempn = n
+        newRows = []
+
+        i_fixHash = row.fix_hash
+        i_repo = row.fix_repo
+        i_bugHash = row.bug_hash
+        i_fixIndex = row.fix_index
+
+        other_pairs_same_repo = pairs[pairs['fix_repo'] == i_repo]
+        other_pairs_same_repo = other_pairs_same_repo[other_pairs_same_repo['fix_hash'] != i_fixHash]
+        other_bugs = other_pairs_same_repo['bug_hash'].unique()
+
+        if len(other_bugs) > 0:
+            selectPairs = other_pairs_same_repo.loc[other_pairs_same_repo['bug_hash'].isin(other_bugs)].sample(n=n, replace=True).rename(columns={'bug_repo': 'bug_repo', 'bug_hash': 'bug_hash', 'bug_index': 'bug_index'})
+            selectPairs['fix_hash'] = i_fixHash
+            selectPairs['fix_repo'] = i_repo
+            selectPairs['fix_index'] = i_fixIndex
+            return selectPairs
+        else:
+            return pd.DataFrame()
+
+    dfList = [get_negative_examples(row, pairs, n) for row in tqdm(pairs.itertuples(), total=len(pairs))]
     df = pd.concat(dfList)
 
     return df
@@ -255,20 +279,17 @@ def createNegativeExamples(pairs, searchPairs, maxNegatives):
     Returns:
     - pd.DataFrame: A Pandas DataFrame with columns fix_hash, bug_hash, and Y label.
     """
-
-    # Find the n closest commits either ahead or behind the correct commit that edit at least one of the same files as the correct commit
-    # Find other commits that we know are bug fixing and edit the same files as the correct commit but are not the correct commit.
-    # Commits made after the bug fixing commit
-    # Commits that are the same repo but no similar files
-    # Commits that are not the same repo
-    # Be interesting to see how many bug fixing commits don't reference files in the bug creating commit
-    #print(pairs)
-    df = pd.concat((pairs, negativeRandomSameRepo(pairs, searchPairs, maxNegatives)))
-    df = df.drop('repo', axis=1).drop('index', axis=1) # get rid of un needed columns
-
+    
+    negList = []
+    print("generating random from same repo")
+    negList.append(negativeRandomSameRepo(pairs, searchPairs, maxNegatives))
+    print("generating negative using other fixes from the same repo")
+    negList.append(negativeDifferentFixSameRepo(pairs, maxNegatives))
+        
+    df = pd.concat(negList)
+    df['Y'] = 0
     return df
 
-    # first thing is just going to be getting n random
 
 
 def getPositivePairs(rootPath,  numSamples: Optional[int] = None):
@@ -345,13 +366,16 @@ def main():
     optionsList = []
     
     ## Setup positive pairs
+    print("Loading positive pairs")
     posPairs = getPositivePairs(rootPath)
 
+    print("Loading all apache commits")
     all_apache_commits = getCommitLookup(rootPath, maxFiles=8, maxDiffLines=80)
+    searchPairs = all_apache_commits
+    all_apache_commits = all_apache_commits.set_index('sha')
+    
 
-    #bugGood = posPairs[(posPairs['bug_hash'].isin(all_apache_commits.index))]
-    #fixGood = posPairs[(posPairs['fix_hash'].isin(all_apache_commits.index))]
-
+    print("filtering positive pairs")
     posPairs = posPairs[(posPairs['bug_hash'].isin(all_apache_commits.index)) & (posPairs['fix_hash'].isin(all_apache_commits.index))]
 
     ## Getting the pickle index for the bug and fix commits
@@ -365,9 +389,15 @@ def main():
     
     print("positive examples:", posPairs.shape[0])
 
-    posPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_positive_pairs.csv"))
+    posPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_positive_pairs2.csv"))
 
-    #withNegative = createNegativeExamples(posPairs, allSamples, numNegatives)
+
+    print("generating negative pairs")
+
+    negPairs = createNegativeExamples(posPairs, searchPairs, numNegatives)
+
+    negPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_negative_pairs.csv"), index=False)
+
 
     #print("negative examples:", withNegative.shape[0] - posPairs.shape[0])
     #print("total examples:", withNegative.shape[0])
