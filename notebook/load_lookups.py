@@ -6,7 +6,7 @@ Commit = CommitFactory()
 import gc
 
 #TODO: Make this process more efficient @lucas
-def load_commit_lookup(pickle_dir = '../data/commit_lookups', verbose = True, max_commits = None, max_commit_bag_size = None):
+def load_commit_lookup(pickle_dir = '../data/commit_lookups/labelled', verbose = True, max_commits = None, max_commit_bag_size = None):
 
     COMMIT_DATA_LOOKUP = {}
 

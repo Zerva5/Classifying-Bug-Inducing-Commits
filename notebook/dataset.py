@@ -13,6 +13,8 @@ import pandas as pd
 import numpy as np
 import gc
 from sklearn.model_selection import train_test_split
+import os
+import pickle
 
 from Commit import CommitFactory
 Commit = CommitFactory()
@@ -72,7 +74,32 @@ def row_to_example(row, BAG_SIZE = 256, CONTEXT_SIZE = 16):
 
 ####################################################################################################################
 
+
+UNLABELLED_PATH="../data/commit_lookups/unlabelled"
+def unlabelled_generator(BAG_SIZE=256, CONTEXT_SIZE=16, batch_size=10):
+    files = os.listdir(UNLABELLED_PATH)
+    files.sort()
+
+    for file_name in files:
+        with open(os.path.join(UNLABELLED_PATH, file_name), 'rb') as f:
+
+            while True:
+                try:
+                    batch = pickle.load(f)
+                except EOFError:
+                    break
+
+                #for sha in tqdm(batch, total=len(batch), desc="Generating Unsupervised X_train"):
+                for sha in batch.keys():
+                    X_train = raw_to_padded(batch[sha].bag_of_contexts, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
+                    #X_train = np.array(X_train, dtype=np.float32)  # Convert the elements in X_train to float32
+
+                    yield (X_train, X_train)
+
+
 def get_unlabelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
+    raise DeprecationWarning("USE THE GENERATOR!!!")
+    raise Exception("PLS DON'T USE THIS")
     global COMMIT_LOOKUP
     _preload()
 
@@ -80,42 +107,71 @@ def get_unlabelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
 
     return X_train
 
-def get_positive_labelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
+# def get_positive_labelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
+#     global COMMIT_LOOKUP
+#     _preload()
+
+#     RAW_EXAMPLES = pd.read_csv(POSITIVE_CSV_FILE)
+    
+#     X_train = [
+#         row_to_example(row, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
+#         for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Positive X_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP
+#     ]
+
+#     y_train = [row["Y"] for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Positive y_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP]
+
+#     return X_train, y_train
+
+# def get_negative_labelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
+#     global COMMIT_LOOKUP
+#     _preload()
+
+#     RAW_EXAMPLES = pd.read_csv(NEGATIVE_CSV_FILE)
+    
+#     X_train = [
+#         row_to_example(row, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
+#         for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Negative X_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP
+#     ]
+
+#     y_train = [row["Y"] for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Negative y_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP]
+
+#     return X_train, y_train
+
+import multiprocessing as mp
+
+
+def row_to_example_helper(args):
+    return row_to_example(args[0], BAG_SIZE=args[1], CONTEXT_SIZE=args[2]), args[0]["Y"]
+
+def get_labelled_data(file, BAG_SIZE=256, CONTEXT_SIZE=16):
     global COMMIT_LOOKUP
     _preload()
 
-    RAW_EXAMPLES = pd.read_csv(POSITIVE_CSV_FILE)
-    
-    X_train = [
-        row_to_example(row, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
-        for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Positive X_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP
-    ]
+    RAW_EXAMPLES = pd.read_csv(file)
 
-    y_train = [row["Y"] for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Positive y_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP]
+    # Prepare arguments for row_to_example_helper
+    args = [(row, BAG_SIZE, CONTEXT_SIZE) for _, row in RAW_EXAMPLES.iterrows() if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP]
 
-    return X_train, y_train
+    # Use multiprocessing to parallelize the list comprehension
+    with mp.Pool(processes=mp.cpu_count()) as pool:
+        results = list(tqdm(pool.imap_unordered(row_to_example_helper, args), total=len(args), desc=f"Generating {file.split('/')[-1].split('.')[0]} X_train and y_train"))
 
-def get_negative_labelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
+    X_train, y_train = zip(*results)
+    return list(X_train), list(y_train)
+
+def get_positive_labelled(BAG_SIZE=256, CONTEXT_SIZE=16):
+    return get_labelled_data(POSITIVE_CSV_FILE, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
+
+def get_negative_labelled(BAG_SIZE=256, CONTEXT_SIZE=16):
+    return get_labelled_data(NEGATIVE_CSV_FILE, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
+
+def get_labelled(BAG_SIZE=256, CONTEXT_SIZE=16):
     global COMMIT_LOOKUP
     _preload()
 
-    RAW_EXAMPLES = pd.read_csv(NEGATIVE_CSV_FILE)
-    
-    X_train = [
-        row_to_example(row, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
-        for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Negative X_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP
-    ]
-
-    y_train = [row["Y"] for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Negative y_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP]
-
-    return X_train, y_train
-
-def get_labelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
-    global COMMIT_LOOKUP
-    _preload()
-    
-    X_train_positive, y_train_positive = get_positive_labelled(BAG_SIZE = BAG_SIZE, CONTEXT_SIZE = CONTEXT_SIZE)
-    X_train_negative, y_train_negative = get_negative_labelled(BAG_SIZE = BAG_SIZE, CONTEXT_SIZE = CONTEXT_SIZE)
+    # Get positive and negative labelled data
+    X_train_positive, y_train_positive = get_labelled_data(POSITIVE_CSV_FILE, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
+    X_train_negative, y_train_negative = get_labelled_data(NEGATIVE_CSV_FILE, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
 
     X_train = X_train_positive + X_train_negative
     y_train = y_train_positive + y_train_negative
@@ -123,3 +179,4 @@ def get_labelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
     X_train, X_test, y_train, y_test = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
 
     return X_train, X_test, y_train, y_test
+

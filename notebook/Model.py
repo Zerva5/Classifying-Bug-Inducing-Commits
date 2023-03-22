@@ -469,8 +469,13 @@ def CommitDiffModelFactory(
             
             return model
 
-        def fit_siam(self, X_train, epochs, verbose=0):        
+        def fit_siam(self, X_train, epochs, verbose=0):   
+            
             self.siam_model.fit([X_train, X_train], [X_train, X_train], epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, callbacks=ClearMemory())
+
+        def fit_siam_generator(self, generator, epochs, verbose=0):   
+            
+            self.siam_model.fit(generator, epochs=epochs, verbose=verbose, callbacks=ClearMemory())
             
         def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0):
 
