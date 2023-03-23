@@ -78,7 +78,7 @@ def row_to_example(row, BAG_SIZE = 256, CONTEXT_SIZE = 16):
 
 
 UNLABELLED_PATH="../data/commit_lookups/unlabelled"
-def unlabelled_generator(BAG_SIZE, CONTEXT_SIZE, max_commits):
+def unlabelled_generator(BAG_SIZE, CONTEXT_SIZE, max_commits, max_commit_bag_size):
     files = os.listdir(UNLABELLED_PATH)
     files.sort()
 
@@ -97,6 +97,9 @@ def unlabelled_generator(BAG_SIZE, CONTEXT_SIZE, max_commits):
                     if max_commits != None and total_commits >= max_commits:
                         break
 
+                    if(max_commit_bag_size != None and len(batch[sha].bag_of_contexts) > max_commit_bag_size):
+                        continue
+
                     X_train = raw_to_padded(batch[sha].bag_of_contexts, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
                     #X_train = np.array(X_train, dtype=np.float32)  # Convert the elements in X_train to float32
 
@@ -105,8 +108,6 @@ def unlabelled_generator(BAG_SIZE, CONTEXT_SIZE, max_commits):
 
 
 def get_unlabelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
-    raise DeprecationWarning("USE THE GENERATOR!!!")
-    raise Exception("PLS DON'T USE THIS")
     global COMMIT_LOOKUP
     _preload()
 
@@ -114,35 +115,6 @@ def get_unlabelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
 
     return X_train
 
-# def get_positive_labelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
-#     global COMMIT_LOOKUP
-#     _preload()
-
-#     RAW_EXAMPLES = pd.read_csv(POSITIVE_CSV_FILE)
-    
-#     X_train = [
-#         row_to_example(row, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
-#         for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Positive X_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP
-#     ]
-
-#     y_train = [row["Y"] for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Positive y_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP]
-
-#     return X_train, y_train
-
-# def get_negative_labelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
-#     global COMMIT_LOOKUP
-#     _preload()
-
-#     RAW_EXAMPLES = pd.read_csv(NEGATIVE_CSV_FILE)
-    
-#     X_train = [
-#         row_to_example(row, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
-#         for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Negative X_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP
-#     ]
-
-#     y_train = [row["Y"] for i, row in tqdm(RAW_EXAMPLES.iterrows(), total=len(RAW_EXAMPLES), desc="Generating Negative y_train") if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP]
-
-#     return X_train, y_train
 
 import multiprocessing as mp
 
@@ -172,7 +144,7 @@ def get_positive_labelled(BAG_SIZE=256, CONTEXT_SIZE=16):
 def get_negative_labelled(BAG_SIZE=256, CONTEXT_SIZE=16):
     return get_labelled_data(NEGATIVE_CSV_FILE, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
 
-def get_labelled(BAG_SIZE=256, CONTEXT_SIZE=16):
+def get_labelled(BAG_SIZE=256, CONTEXT_SIZE=16, balance = False):
     global COMMIT_LOOKUP
     _preload()
 
@@ -182,6 +154,9 @@ def get_labelled(BAG_SIZE=256, CONTEXT_SIZE=16):
 
     X_train = X_train_positive + X_train_negative
     y_train = y_train_positive + y_train_negative
+
+    if(balance):
+        X_train, y_train = zip(*random.sample([(x, y) for x, y in zip(X_train, y_train) if y == 0], sum(y_train)) + [(x, y) for x, y in zip(X_train, y_train) if y == 1])
 
     X_train, X_test, y_train, y_test = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
 
