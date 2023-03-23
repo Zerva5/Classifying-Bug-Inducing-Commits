@@ -470,13 +470,13 @@ def CommitDiffModelFactory(
 
         def fit_siam(self, X_train, epochs, verbose=0):   
             
-            self.siam_model.fit(X_train, X_train, epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, callbacks=ClearMemory())
+            return self.siam_model.fit(X_train, X_train, epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, callbacks=ClearMemory())
 
         def fit_siam_generator(self, generator, epochs, verbose=0):   
             
-            self.siam_model.fit(generator, epochs=epochs, verbose=verbose, callbacks=ClearMemory())
+            return self.siam_model.fit(generator, epochs=epochs, verbose=verbose, callbacks=ClearMemory())
             
-        def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0):
+        def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0, validation_data=None):
 
             X_train_name = np.array([tup[0] for tup in X_train])
             X_train_timestamp = np.array([tup[1] for tup in X_train])
@@ -484,12 +484,21 @@ def CommitDiffModelFactory(
             X_train_bag1 = np.array([tup[3] for tup in X_train])
             X_train_bag2 = np.array([tup[4] for tup in X_train])
 
-            self.binary_classification_model.fit(
+            X_test = validation_data[0]
+            y_test = validation_data[1]
+            X_test_name = np.array([tup[0] for tup in X_test])
+            X_test_timestamp = np.array([tup[1] for tup in X_test])
+            X_test_message = np.array([tup[2] for tup in X_test])
+            X_test_bag1 = np.array([tup[3] for tup in X_test])
+            X_test_bag2 = np.array([tup[4] for tup in X_test])
+
+            return self.binary_classification_model.fit(
                 [X_train_name, X_train_timestamp, X_train_message, X_train_bag1, X_train_bag2],
                 y_train,
                 epochs=epochs,
                 batch_size=batch_size,
-                verbose=verbose
+                verbose=verbose,
+                validation_data=([X_test_name, X_test_timestamp, X_test_message, X_test_bag1, X_test_bag2],y_test)
             )
 
         def evaluate_binary_classification(self, X_test, y_test, verbose=0):
