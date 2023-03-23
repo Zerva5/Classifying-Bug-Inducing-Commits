@@ -146,7 +146,7 @@ def CommitDiffModelFactory(
 
 
     class CommitDiffModel:
-        def __init__(self, unsupervised_data_size):
+        def __init__(self, unsupervised_data_size, siam_batch_size):
             self.input_shape = (BAG_SIZE, CONTEXT_SIZE)
             self.bag_size = BAG_SIZE
             self.context_size = CONTEXT_SIZE
@@ -162,7 +162,7 @@ def CommitDiffModelFactory(
             self.weight_decay = 0.0001
             self.momentum = 0.9
             self.unsupervised_data_size = unsupervised_data_size
-            self.siam_batch_size = 16
+            self.siam_batch_size = siam_batch_size
             self.steps_per_update = 8
             
             self.encoder = None
@@ -386,7 +386,7 @@ def CommitDiffModelFactory(
             
             # Create SimSiam model
             x1 = Input(shape=self.input_shape)
-            x2 = Input(shape=self.input_shape)
+            x2 = x1
 
             # Define a lambda layer to shuffle the input tensors
             shuffle_layer = Lambda(lambda x: tf.random.shuffle(x))
@@ -418,13 +418,12 @@ def CommitDiffModelFactory(
             concatenated_outputs = Concatenate(axis=-1)([p1, p2, z1, z2])
 
             # Define the model
-            model = tf.keras.Model(inputs=[x1, x2], outputs=concatenated_outputs)
+            model = tf.keras.Model(inputs=x1, outputs=concatenated_outputs)
 
             lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.base_lr * (self.siam_batch_size / self.steps_per_update)/256, self.unsupervised_data_size)
 
             # Define the optimizer with SGD, weight decay, and momentum
             optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
-            # optimizer = GradientAccumulateOptimizer(accum_steps=self.steps_per_update, optimizer=optimizer)
 
             model = GradientAccumulateModel(accum_steps=self.steps_per_update, inputs=model.input, outputs=model.output)
 
@@ -471,7 +470,7 @@ def CommitDiffModelFactory(
 
         def fit_siam(self, X_train, epochs, verbose=0):   
             
-            self.siam_model.fit([X_train, X_train], [X_train, X_train], epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, callbacks=ClearMemory())
+            self.siam_model.fit(X_train, X_train, epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, callbacks=ClearMemory())
 
         def fit_siam_generator(self, generator, epochs, verbose=0):   
             

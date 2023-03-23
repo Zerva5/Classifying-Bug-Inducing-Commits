@@ -78,10 +78,11 @@ def row_to_example(row, BAG_SIZE = 256, CONTEXT_SIZE = 16):
 
 
 UNLABELLED_PATH="../data/commit_lookups/unlabelled"
-def unlabelled_generator(BAG_SIZE=256, CONTEXT_SIZE=16, batch_size=10):
+def unlabelled_generator(BAG_SIZE, CONTEXT_SIZE, max_commits):
     files = os.listdir(UNLABELLED_PATH)
     files.sort()
 
+    total_commits = 0
     for file_name in files:
         with open(os.path.join(UNLABELLED_PATH, file_name), 'rb') as f:
 
@@ -93,9 +94,13 @@ def unlabelled_generator(BAG_SIZE=256, CONTEXT_SIZE=16, batch_size=10):
 
                 #for sha in tqdm(batch, total=len(batch), desc="Generating Unsupervised X_train"):
                 for sha in batch.keys():
+                    if max_commits != None and total_commits >= max_commits:
+                        break
+
                     X_train = raw_to_padded(batch[sha].bag_of_contexts, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
                     #X_train = np.array(X_train, dtype=np.float32)  # Convert the elements in X_train to float32
 
+                    total_commits += 1
                     yield (X_train, X_train)
 
 
