@@ -464,7 +464,7 @@ def CommitDiffModelFactory(
             model = tf.keras.Model(inputs=[name_input, timestamp_input, message_input, bag1_input, bag2_input], outputs=binary_classification)
 
             # Compile model
-            model.compile(optimizer=self.optimizer, loss=self.loss_fn)
+            model.compile(optimizer=self.optimizer, loss=self.loss_fn, metrics=['accuracy'])
             
             return model
 
@@ -484,13 +484,17 @@ def CommitDiffModelFactory(
             X_train_bag1 = np.array([tup[3] for tup in X_train])
             X_train_bag2 = np.array([tup[4] for tup in X_train])
 
-            X_test = validation_data[0]
-            y_test = validation_data[1]
-            X_test_name = np.array([tup[0] for tup in X_test])
-            X_test_timestamp = np.array([tup[1] for tup in X_test])
-            X_test_message = np.array([tup[2] for tup in X_test])
-            X_test_bag1 = np.array([tup[3] for tup in X_test])
-            X_test_bag2 = np.array([tup[4] for tup in X_test])
+            if(validation_data is not None):
+                X_test = validation_data[0]
+                y_test = validation_data[1]
+                X_test_name = np.array([tup[0] for tup in X_test])
+                X_test_timestamp = np.array([tup[1] for tup in X_test])
+                X_test_message = np.array([tup[2] for tup in X_test])
+                X_test_bag1 = np.array([tup[3] for tup in X_test])
+                X_test_bag2 = np.array([tup[4] for tup in X_test])
+                val_data = ([X_test_name, X_test_timestamp, X_test_message, X_test_bag1, X_test_bag2],y_test)
+            else:
+                val_data = None
 
             return self.binary_classification_model.fit(
                 [X_train_name, X_train_timestamp, X_train_message, X_train_bag1, X_train_bag2],
@@ -498,7 +502,7 @@ def CommitDiffModelFactory(
                 epochs=epochs,
                 batch_size=batch_size,
                 verbose=verbose,
-                validation_data=([X_test_name, X_test_timestamp, X_test_message, X_test_bag1, X_test_bag2],y_test)
+                validation_data=val_data
             )
 
         def evaluate_binary_classification(self, X_test, y_test, verbose=0):
