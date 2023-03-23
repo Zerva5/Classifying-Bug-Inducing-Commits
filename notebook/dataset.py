@@ -94,7 +94,7 @@ def unlabelled_generator(BAG_SIZE, CONTEXT_SIZE, max_commits, max_commit_bag_siz
 
                 #for sha in tqdm(batch, total=len(batch), desc="Generating Unsupervised X_train"):
                 for sha in batch.keys():
-                    if max_commits != None and total_commits >= max_commits:
+                    if max_commits is not None and total_commits >= max_commits:
                         break
 
                     if(max_commit_bag_size != None and len(batch[sha].bag_of_contexts) > max_commit_bag_size):
@@ -105,6 +105,9 @@ def unlabelled_generator(BAG_SIZE, CONTEXT_SIZE, max_commits, max_commit_bag_siz
 
                     total_commits += 1
                     yield (X_train, X_train)
+            
+            if max_commits is not None and total_commits >= max_commits:
+                        break
 
 
 def get_unlabelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
