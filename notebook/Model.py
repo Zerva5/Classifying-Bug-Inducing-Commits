@@ -45,7 +45,7 @@ def CommitDiffModelFactory(
             self.som_grid_size = som_grid_size
 
             self.embedding = Embedding(input_dim=self.max_node_lookup_num + 1, output_dim=self.embedding_dim)
-            self.conv2d = Conv2D(filters=32, kernel_size=(6, 6), activation='relu')
+            self.conv2d = Conv2D(filters=self.convolutional_filters, kernel_size=(6, 6), activation='relu')
             self.max_pooling = MaxPooling2D(pool_size=(self.context_size, 1))
             self.reshape = Reshape((-1, 32))
             self.lstm = LSTM(units=64)
@@ -164,6 +164,9 @@ def CommitDiffModelFactory(
             self.unsupervised_data_size = unsupervised_data_size
             self.siam_batch_size = siam_batch_size
             self.steps_per_update = steps_per_update
+
+            self.convolutional_filters = 32
+            self.lstm_memory_units = 64
             
             self.encoder = None
             self.siam_model = None
@@ -180,13 +183,13 @@ def CommitDiffModelFactory(
         def encoder_recurrent_convolutional(self, inputs):   
         
             # Add a 1D convolutional layer to extract features from each context
-            conv = Conv1D(filters=32, kernel_size=3, activation='relu')(inputs)
+            conv = Conv1D(filters=self.convolutional_filters, kernel_size=3, activation='relu')(inputs)
 
             # Add a max pooling layer to summarize the extracted features
             max_pooling = MaxPooling1D(pool_size=self.context_size)(conv)
 
             # Add a recurrent layer to capture temporal dependencies within each context
-            lstm = LSTM(units=64)(max_pooling)
+            lstm = LSTM(units=self.lstm_memory_units)(max_pooling)
 
             return lstm
         
@@ -195,7 +198,7 @@ def CommitDiffModelFactory(
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
         
             # Add a 2D convolutional layer to extract features from each context
-            conv = Conv2D(filters=32, kernel_size=(6, 6), activation='relu')(embedded_inputs)
+            conv = Conv2D(filters=self.convolutional_filters, kernel_size=(6, 6), activation='relu')(embedded_inputs)
 
             # Add a max pooling layer to summarize the extracted features
             max_pooling = MaxPooling2D(pool_size=(self.context_size, 1))(conv)
@@ -204,7 +207,7 @@ def CommitDiffModelFactory(
             flattened = Reshape((-1, 32))(max_pooling)
 
             # Add a recurrent layer to capture temporal dependencies within each context
-            lstm = LSTM(units=64)(flattened)
+            lstm = LSTM(units=self.lstm_memory_units)(flattened)
             
             return lstm
 
@@ -307,7 +310,7 @@ def CommitDiffModelFactory(
             reshaped_inputs = tf.keras.layers.Reshape((self.bag_size, self.context_size * self.embedding_dim))(embedded_inputs)
 
             # Apply bidirectional LSTM layer
-            x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=64, return_sequences=True))(reshaped_inputs)
+            x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=self.lstm_memory_units, return_sequences=True))(reshaped_inputs)
 
             # Flatten the output
             flattened = Flatten()(x)
@@ -321,16 +324,16 @@ def CommitDiffModelFactory(
             flattened = Reshape((-1, 32))(embedded_inputs)
 
             # Apply LSTM layer followed by dense layers
-            x = LSTM(units=64, return_sequences=True)(flattened)
+            x = LSTM(units=self.lstm_memory_units, return_sequences=True)(flattened)
             x = Flatten()(x)
-            x = Dense(units=32, activation="relu")(x)
+            x = Dense(units=self.lstm_memory_units, activation="relu")(x)
 
             return x
             
         
         def encoder_conv_attention(self, inputs):   
 				
-            conv = Conv1D(filters=32, kernel_size=3, activation='relu')(inputs)
+            conv = Conv1D(filters=self.convolutional_filters, kernel_size=3, activation='relu')(inputs)
             max_pooling = MaxPooling1D(pool_size=self.context_size)(conv)
 
             attention_output = Attention()([max_pooling, max_pooling])
@@ -339,9 +342,9 @@ def CommitDiffModelFactory(
             return pooled_attention
 
         def encoder_lstm_attention(self, inputs):
-            conv = Conv1D(filters=32, kernel_size=3, activation='relu')(inputs)
+            conv = Conv1D(filters=self.convolutional_filters, kernel_size=3, activation='relu')(inputs)
             max_pooling = MaxPooling1D(pool_size=self.context_size)(conv)
-            lstm = LSTM(units=64, return_sequences=True)(max_pooling)
+            lstm = LSTM(units=self.lstm_memory_units, return_sequences=True)(max_pooling)
 
             attention_output = Attention()([lstm, lstm])
             pooled_attention = GlobalAveragePooling1D()(attention_output)
@@ -425,7 +428,7 @@ def CommitDiffModelFactory(
             
             # Predict a transformation of the first encoding
             p1 = Dense(units=self.fixed_vector_size, activation=self.activation_fn2)(z1)
-            p2 = Dense(units=self.fixed_vector_size, activation=self.activation_fn2)(z1)
+            p2 = Dense(units=self.fixed_vector_size, activation=self.activation_fn2)(z2)
             
             #Loss function
             def D(p, z):
