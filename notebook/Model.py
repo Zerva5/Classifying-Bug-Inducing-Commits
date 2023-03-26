@@ -18,6 +18,7 @@ from tensorflow.keras.initializers import RandomUniform
 from gradient_accumulator import GradientAccumulateModel
 from tensorflow.keras.callbacks import Callback
 from tensorflow.keras import backend as k
+from tensorflow.keras.optimizers import Adam
 
 from vocab import MAX_NODE_LOOKUP_NUM
 
@@ -155,10 +156,9 @@ def CommitDiffModelFactory(
             self.activation_fn1 = "relu"
             self.activation_fn2 = "relu"
             self.activation_fn3 = "sigmoid"
-            self.optimizer = "adam"
             self.loss_fn = "binary_crossentropy"
             self.embedding_dim = 64
-            self.base_lr = 0.085
+            self.base_lr = 0.05
             self.weight_decay = 0.0001
             self.momentum = 0.9
             self.unsupervised_data_size = unsupervised_data_size
@@ -479,16 +479,20 @@ def CommitDiffModelFactory(
             merged = Concatenate()([encoded1, encoded2, name_reshaped, timestamp_reshaped, message_reshaped])
             
             # Binary classification output
-            binary_classification = Dense(units=512, activation=self.activation_fn3)(merged)
-            binary_classification = Dense(units=512, activation=self.activation_fn3)(binary_classification)
-            binary_classification = Dense(units=256, activation=self.activation_fn3)(binary_classification)
+            binary_classification = Dense(units=self.bag_size * 2, activation=self.activation_fn3)(merged)
+            binary_classification = Dense(units=self.bag_size * 2, activation=self.activation_fn3)(binary_classification)
+            binary_classification = Dense(units=self.bag_size, activation=self.activation_fn3)(binary_classification)
+            binary_classification = Dense(units=self.bag_size, activation=self.activation_fn3)(binary_classification)
+            binary_classification = Dense(units=self.bag_size / 2, activation=self.activation_fn3)(binary_classification)
+            binary_classification = Dense(units=self.bag_size / 2, activation=self.activation_fn3)(binary_classification)
+            binary_classification = Dense(units=self.bag_size / 4, activation=self.activation_fn3)(binary_classification)
             binary_classification = Dense(units=1, activation=self.activation_fn3)(binary_classification)
             
             # Define model
             model = tf.keras.Model(inputs=[name_input, timestamp_input, message_input, bag1_input, bag2_input], outputs=binary_classification)
 
             # Compile model
-            model.compile(optimizer=self.optimizer, loss=self.loss_fn, metrics=['accuracy'])
+            model.compile(optimizer=Adam(learning_rate=0.0005), loss=self.loss_fn, metrics=['accuracy'])
             
             return model
 
