@@ -119,6 +119,7 @@ def get_unlabelled(BAG_SIZE = 256, CONTEXT_SIZE = 16):
     return X_train
 
 
+
 import multiprocessing as mp
 
 
@@ -165,3 +166,29 @@ def get_labelled(BAG_SIZE=256, CONTEXT_SIZE=16, balance = False):
 
     return X_train, X_test, y_train, y_test
 
+
+
+UNLABELLED_PATH = "../data/commit_lookups/rendered_unlabelled"
+
+def rendred_unlabelled_generator(BAG_SIZE, CONTEXT_SIZE, max_commits=None, max_commit_bag_size=None):
+    files = os.listdir(UNLABELLED_PATH)
+    files.sort()
+
+    total_commits = 0
+    for file_name in files:
+        with open(os.path.join(UNLABELLED_PATH, file_name), 'rb') as f:
+            while True:
+                try:
+                    batch = pickle.load(f)
+                except EOFError:
+                    break
+
+                for bag in batch:
+                    if max_commits is not None and total_commits >= max_commits:
+                        break
+
+                    total_commits += 1
+                    yield (bag, bag)
+
+                if max_commits is not None and total_commits >= max_commits:
+                    break

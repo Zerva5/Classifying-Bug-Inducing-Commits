@@ -146,7 +146,7 @@ def CommitDiffModelFactory(
 
 
     class CommitDiffModel:
-        def __init__(self, unsupervised_data_size, siam_batch_size):
+        def __init__(self, unsupervised_data_size, siam_batch_size, steps_per_update = 8):
             self.input_shape = (BAG_SIZE, CONTEXT_SIZE)
             self.bag_size = BAG_SIZE
             self.context_size = CONTEXT_SIZE
@@ -158,12 +158,12 @@ def CommitDiffModelFactory(
             self.optimizer = "adam"
             self.loss_fn = "binary_crossentropy"
             self.embedding_dim = 64
-            self.base_lr = 0.05
+            self.base_lr = 0.085
             self.weight_decay = 0.0001
             self.momentum = 0.9
             self.unsupervised_data_size = unsupervised_data_size
             self.siam_batch_size = siam_batch_size
-            self.steps_per_update = 8
+            self.steps_per_update = steps_per_update
             
             self.encoder = None
             self.siam_model = None
@@ -326,6 +326,27 @@ def CommitDiffModelFactory(
             x = Dense(units=32, activation="relu")(x)
 
             return x
+            
+        
+        def encoder_conv_attention(self, inputs):   
+				
+            conv = Conv1D(filters=32, kernel_size=3, activation='relu')(inputs)
+            max_pooling = MaxPooling1D(pool_size=self.context_size)(conv)
+
+            attention_output = Attention()([max_pooling, max_pooling])
+            pooled_attention = GlobalAveragePooling1D()(attention_output)
+
+            return pooled_attention
+
+        def encoder_lstm_attention(self, inputs):
+            conv = Conv1D(filters=32, kernel_size=3, activation='relu')(inputs)
+            max_pooling = MaxPooling1D(pool_size=self.context_size)(conv)
+            lstm = LSTM(units=64, return_sequences=True)(max_pooling)
+
+            attention_output = Attention()([lstm, lstm])
+            pooled_attention = GlobalAveragePooling1D()(attention_output)
+
+            return pooled_attention
 
 
         
@@ -365,7 +386,10 @@ def CommitDiffModelFactory(
                 encoded = self.bidirectional_lstm_encoder(masked_inputs)
             elif encoder == 11:
                 encoded = self.lstm_with_dense_layers_encoder(masked_inputs)
-
+            elif encoder == 12:
+                encoded = self.encoder_conv_attention(masked_inputs)
+            elif encoder == 13:
+                encoded = self.encoder_lstm_attention(masked_inputs)
 
             else:
                 encoded = masked_inputs
@@ -470,11 +494,11 @@ def CommitDiffModelFactory(
 
         def fit_siam(self, X_train, epochs, verbose=0):   
             
-            return self.siam_model.fit(X_train, X_train, epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, callbacks=ClearMemory())
+            return self.siam_model.fit(X_train, X_train, epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
 
         def fit_siam_generator(self, generator, epochs, verbose=0):   
             
-            return self.siam_model.fit(generator, epochs=epochs, verbose=verbose, callbacks=ClearMemory())
+            return self.siam_model.fit(generator, epochs=epochs, verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
             
         def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0, validation_data=None):
 
@@ -502,7 +526,8 @@ def CommitDiffModelFactory(
                 epochs=epochs,
                 batch_size=batch_size,
                 verbose=verbose,
-                validation_data=val_data
+                validation_data=val_data,
+                use_multiprocessing=True
             )
 
         def evaluate_binary_classification(self, X_test, y_test, verbose=0):
