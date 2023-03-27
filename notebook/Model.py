@@ -12,7 +12,7 @@ from tensorflow.keras.layers import (
     Input, Dense, LSTM, Attention, Concatenate, Layer,
     Embedding, TimeDistributed, Multiply,
     Lambda, Add, Masking, GlobalMaxPooling2D, Reshape, MaxPooling1D, MaxPooling2D,
-    Dropout, Conv1D, Conv2D, Bidirectional, GRU, Flatten, GlobalAveragePooling1D, GlobalAveragePooling2D
+    Dropout, Conv1D, Conv2D, Bidirectional, GRU, Flatten, GlobalAveragePooling1D, GlobalAveragePooling2D, Softmax, Dot
 )
 from tensorflow.keras.initializers import RandomUniform
 from gradient_accumulator import GradientAccumulateModel
@@ -478,15 +478,17 @@ def CommitDiffModelFactory(
             timestamp_reshaped = timestamp_input#Reshape((1,))(timestamp_input)
             message_reshaped = message_input#Reshape((1,))(message_input)
 
+
+            #Use attention between the 2 bags
+            # Compute similarity matrix between bags
+            context = Attention()([encoded1, encoded2])
             
-            merged = Concatenate()([encoded1, encoded2, name_reshaped, timestamp_reshaped, message_reshaped])
+            # merged = Concatenate()([encoded1, encoded2, name_reshaped, timestamp_reshaped, message_reshaped])
+            merged = Concatenate()([context, name_reshaped, timestamp_reshaped, message_reshaped])
             
             # Binary classification output
             binary_classification = Dense(units=self.bag_size * 2, activation=self.activation_fn3)(merged)
-            binary_classification = Dense(units=self.bag_size * 2, activation=self.activation_fn3)(binary_classification)
             binary_classification = Dense(units=self.bag_size, activation=self.activation_fn3)(binary_classification)
-            binary_classification = Dense(units=self.bag_size, activation=self.activation_fn3)(binary_classification)
-            binary_classification = Dense(units=self.bag_size / 2, activation=self.activation_fn3)(binary_classification)
             binary_classification = Dense(units=self.bag_size / 2, activation=self.activation_fn3)(binary_classification)
             binary_classification = Dense(units=self.bag_size / 4, activation=self.activation_fn3)(binary_classification)
             binary_classification = Dense(units=1, activation=self.activation_fn3)(binary_classification)
@@ -495,7 +497,7 @@ def CommitDiffModelFactory(
             model = tf.keras.Model(inputs=[name_input, timestamp_input, message_input, bag1_input, bag2_input], outputs=binary_classification)
 
             # Compile model
-            model.compile(optimizer=Adam(learning_rate=0.0005), loss=self.loss_fn, metrics=['accuracy'])
+            model.compile(optimizer=Adam(learning_rate=0.0001), loss=self.loss_fn, metrics=['accuracy'])
             
             return model
 
