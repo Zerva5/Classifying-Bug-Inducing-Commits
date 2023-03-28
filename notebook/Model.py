@@ -506,7 +506,7 @@ def CommitDiffModelFactory(
 
             return self.siam_model.fit(X_train, X_train, epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
 
-        def fit_siam_generator(self, generator, epochs, num_runs=4, run_epochs=16, verbose=0): 
+        def fit_siam_generator(self, generator, epochs, num_runs=4, run_epochs=8, verbose=0): 
 
             # Define a list to store the best weights obtained during training
             best_weights = None
