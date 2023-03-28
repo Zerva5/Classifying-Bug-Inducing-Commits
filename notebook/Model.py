@@ -22,7 +22,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
 
 from vocab import MAX_NODE_LOOKUP_NUM
-
+from tqdm.auto import tqdm
 
 def CommitDiffModelFactory(
     BAG_SIZE = 256,
@@ -502,44 +502,38 @@ def CommitDiffModelFactory(
             
             return model
 
-        def fit_siam(self, X_train, epochs, num_runs=5, metric='loss', verbose=0): 
-            
-            # Define the number of epochs to train for each run
-            run_epochs = 10
+        def fit_siam(self, X_train, epochs, verbose=0): 
 
-            # Define a list to store the metric values for each set of weights
-            metric_values = []
+            return self.siam_model.fit(X_train, X_train, epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
+
+        def fit_siam_generator(self, generator, epochs, num_runs=4, run_epochs=16, verbose=0): 
+
+            # Define a list to store the best weights obtained during training
+            best_weights = None
+            best_metric_value = float('inf')
 
             # Loop over each set of initial random weights
-            for i in range(num_runs):
+            for i in tqdm(range(num_runs), desc="Searching for a good initial randomization"):
                 # Randomly initialize the weights of the model
-                self.siam_model.set_weights([np.random.normal(0, 0.1, size) for size in self.siam_model.get_weights()])
-
-                # Define the model checkpoint callback
-                checkpoint = ModelCheckpoint(f'weights_{i}.h5', monitor=metric, save_best_only=True, save_weights_only=True, verbose=0)
+                initial_weights = [np.random.normal(0, 0.1, w.shape) for w in self.siam_model.get_weights()]
+                self.siam_model.set_weights(initial_weights)
 
                 # Train the model for a fixed number of epochs
-                self.siam_model.fit(X_train, X_train, epochs=run_epochs, batch_size=self.siam_batch_size, verbose=0, use_multiprocessing=True, callbacks=[checkpoint, ClearMemory()])
+                history = self.siam_model.fit(generator, epochs=run_epochs, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory()])
 
-                # Load the saved model weights and evaluate the metric
-                self.siam_model.load_weights(f'weights_{i}.h5')
-                metric_value = self.siam_model.evaluate(X_train, X_train, verbose=0)
-                metric_values.append(metric_value)
+                # Retrieve the loss value from the last epoch
+                metric_value = history.history['loss'][-1]
+                if metric_value < best_metric_value:
+                    # Update the best weights and metric value
+                    best_weights = self.siam_model.get_weights()
+                    best_metric_value = metric_value
 
-            # Choose the best set of weights based on the metric value
-            best_run_idx = np.argmin(metric_values)
-            best_weights_path = f'weights_{best_run_idx}.h5'
+            # Reset the weights of the model to the best weights obtained during training
+            self.siam_model.set_weights(best_weights)
 
-            # Load the best set of weights and continue training for the remaining epochs
-            self.siam_model.load_weights(best_weights_path)
-            remaining_epochs = epochs - num_runs * run_epochs
+            # Train the model for the remaining epochs
+            return self.siam_model.fit(generator, epochs=(run_epochs - epochs), verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
 
-            return self.siam_model.fit(X_train, X_train, epochs=remaining_epochs, batch_size=self.siam_batch_size, verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
-
-        def fit_siam_generator(self, generator, epochs, verbose=0):   
-            
-            return self.siam_model.fit(generator, epochs=epochs, verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
-            
         def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0, validation_data=None):
 
             X_train_name = np.array([tup[0] for tup in X_train])
