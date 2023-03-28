@@ -19,6 +19,7 @@ from gradient_accumulator import GradientAccumulateModel
 from tensorflow.keras.callbacks import Callback
 from tensorflow.keras import backend as k
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import ModelCheckpoint
 
 from vocab import MAX_NODE_LOOKUP_NUM
 
@@ -158,9 +159,9 @@ def CommitDiffModelFactory(
             self.activation_fn3 = "sigmoid"
             self.loss_fn = "binary_crossentropy"
             self.embedding_dim = 64
-            self.base_lr = 0.05
+            self.base_lr = 0.06
             self.weight_decay = 0.0001
-            self.momentum = 0.9
+            self.momentum = 0.925
             self.unsupervised_data_size = unsupervised_data_size
             self.siam_batch_size = siam_batch_size
             self.steps_per_update = steps_per_update
@@ -501,9 +502,39 @@ def CommitDiffModelFactory(
             
             return model
 
-        def fit_siam(self, X_train, epochs, verbose=0):   
+        def fit_siam(self, X_train, epochs, num_runs=5, metric='loss', verbose=0): 
             
-            return self.siam_model.fit(X_train, X_train, epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
+            # Define the number of epochs to train for each run
+            run_epochs = 10
+
+            # Define a list to store the metric values for each set of weights
+            metric_values = []
+
+            # Loop over each set of initial random weights
+            for i in range(num_runs):
+                # Randomly initialize the weights of the model
+                self.siam_model.set_weights([np.random.normal(0, 0.1, size) for size in self.siam_model.get_weights()])
+
+                # Define the model checkpoint callback
+                checkpoint = ModelCheckpoint(f'weights_{i}.h5', monitor=metric, save_best_only=True, save_weights_only=True, verbose=0)
+
+                # Train the model for a fixed number of epochs
+                self.siam_model.fit(X_train, X_train, epochs=run_epochs, batch_size=self.siam_batch_size, verbose=0, use_multiprocessing=True, callbacks=[checkpoint, ClearMemory()])
+
+                # Load the saved model weights and evaluate the metric
+                self.siam_model.load_weights(f'weights_{i}.h5')
+                metric_value = self.siam_model.evaluate(X_train, X_train, verbose=0)
+                metric_values.append(metric_value)
+
+            # Choose the best set of weights based on the metric value
+            best_run_idx = np.argmin(metric_values)
+            best_weights_path = f'weights_{best_run_idx}.h5'
+
+            # Load the best set of weights and continue training for the remaining epochs
+            self.siam_model.load_weights(best_weights_path)
+            remaining_epochs = epochs - num_runs * run_epochs
+
+            return self.siam_model.fit(X_train, X_train, epochs=remaining_epochs, batch_size=self.siam_batch_size, verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
 
         def fit_siam_generator(self, generator, epochs, verbose=0):   
             
