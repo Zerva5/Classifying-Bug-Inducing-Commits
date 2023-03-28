@@ -532,7 +532,7 @@ def CommitDiffModelFactory(
             self.siam_model.set_weights(best_weights)
 
             # Train the model for the remaining epochs
-            return self.siam_model.fit(generator, epochs=(run_epochs - epochs), verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
+            return self.siam_model.fit(generator, epochs=(epochs - run_epochs), verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
 
         def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0, validation_data=None):
 
