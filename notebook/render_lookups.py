@@ -3,6 +3,7 @@ import pickle
 from tqdm.auto import tqdm
 from dataset import raw_to_padded, _preload, get_labelled
 import numpy as np
+import random
 
 from Commit import CommitFactory
 Commit = CommitFactory()
@@ -59,7 +60,7 @@ def render_examples(output_dir='../data/commit_lookups/rendered_labelled', BAG_S
         with open(filename, 'wb') as f_out:
             pickle.dump([X_train_subset, X_test_subset, y_train_subset, y_test_subset], f_out)
 
-def get_rendered_examples(input_dir='../data/commit_lookups/rendered_labelled'):
+def get_rendered_examples(balance=False, input_dir='../data/commit_lookups/rendered_labelled'):
     X_train = []
     X_test = []
     y_train = []
@@ -71,4 +72,9 @@ def get_rendered_examples(input_dir='../data/commit_lookups/rendered_labelled'):
             X_test.extend(data[1])
             y_train.extend(data[2])
             y_test.extend(data[3])
+    
+    if(balance):
+        X_train, y_train = zip(*random.sample([(x, y) for x, y in zip(X_train, y_train) if y == 0], sum(y_train)) + [(x, y) for x, y in zip(X_train, y_train) if y == 1])
+        X_test, y_test = zip(*random.sample([(x, y) for x, y in zip(X_test, y_test) if y == 0], sum(y_test)) + [(x, y) for x, y in zip(X_test, y_test) if y == 1])
+
     return X_train, X_test, y_train, y_test
