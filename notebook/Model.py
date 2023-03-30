@@ -148,7 +148,7 @@ def CommitDiffModelFactory(
 
 
     class CommitDiffModel:
-        def __init__(self, unsupervised_epochs, supervised_epochs, siam_batch_size, steps_per_update = 8):
+        def __init__(self, supervised_data_size, supervised_batch_size, unsupervised_data_size, unsupervised_epochs, supervised_epochs, siam_batch_size, steps_per_update = 8):
             self.input_shape = (BAG_SIZE, CONTEXT_SIZE)
             self.bag_size = BAG_SIZE
             self.context_size = CONTEXT_SIZE
@@ -168,6 +168,9 @@ def CommitDiffModelFactory(
             self.supervised_base_lr = 0.0001
             #####################################
             
+            self.supervised_data_size = supervised_data_size
+            self.supervised_batch_size = supervised_batch_size
+            self.unsupervised_data_size = unsupervised_data_size
             self.unsupervised_epochs = unsupervised_epochs
             self.siam_batch_size = siam_batch_size
             self.steps_per_update = steps_per_update
@@ -473,7 +476,7 @@ def CommitDiffModelFactory(
             # Define the model
             model = tf.keras.Model(inputs=x1, outputs=concatenated_outputs)
 
-            lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.base_lr * (self.siam_batch_size / self.steps_per_update)/256, self.unsupervised_epochs)
+            lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.base_lr * (self.siam_batch_size / self.steps_per_update)/256, self.unsupervised_epochs * (self.unsupervised_data_size / (self.siam_batch_size / self.steps_per_update)))
 
             # Define the optimizer with SGD, weight decay, and momentum
             optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
@@ -522,7 +525,7 @@ def CommitDiffModelFactory(
             # Define model
             model = tf.keras.Model(inputs=[name_input, timestamp_input, message_input, bag1_input, bag2_input], outputs=binary_classification)
 
-            lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.supervised_base_lr, self.supervised_epochs)
+            lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.supervised_base_lr, self.supervised_epochs * (self.supervised_data_size / self.supervised_batch_size))
            
             # Compile model
             model.compile(optimizer=Adam(learning_rate=lr_schedule), loss=self.loss_fn, metrics=['accuracy'])
