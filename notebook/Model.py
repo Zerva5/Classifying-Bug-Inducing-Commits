@@ -24,6 +24,12 @@ from tensorflow.keras.callbacks import ModelCheckpoint
 from vocab import MAX_NODE_LOOKUP_NUM
 from tqdm.auto import tqdm
 
+def get_lr_metric(optimizer):
+    def lr(y_true, y_pred):
+        return optimizer.lr
+    return lr
+
+
 def CommitDiffModelFactory(
     BAG_SIZE = 256,
     CONTEXT_SIZE = 16,
@@ -480,11 +486,12 @@ def CommitDiffModelFactory(
 
             # Define the optimizer with SGD, weight decay, and momentum
             optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
+            lr_metric = get_lr_metric(optimizer)
 
             model = GradientAccumulateModel(accum_steps=self.steps_per_update, inputs=model.input, outputs=model.output)
 
             # Compile the model
-            model.compile(optimizer=optimizer, loss=siamese_loss, run_eagerly=True)
+            model.compile(optimizer=optimizer, loss=siamese_loss, run_eagerly=True, metrics=[lr_metric])
 
             return model
 
@@ -526,9 +533,12 @@ def CommitDiffModelFactory(
             model = tf.keras.Model(inputs=[name_input, timestamp_input, message_input, bag1_input, bag2_input], outputs=binary_classification)
 
             lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.supervised_base_lr, self.supervised_epochs * (self.supervised_data_size / self.supervised_batch_size))
+            optimizer=Adam(learning_rate=lr_schedule)
+            
+            lr_metric = get_lr_metric(optimizer)
            
             # Compile model
-            model.compile(optimizer=Adam(learning_rate=lr_schedule), loss=self.loss_fn, metrics=['accuracy'])
+            model.compile(optimizer=optimizer, loss=self.loss_fn, metrics=['accuracy', lr_metric])
             
             return model
 
