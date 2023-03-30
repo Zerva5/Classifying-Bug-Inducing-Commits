@@ -362,6 +362,19 @@ def CommitDiffModelFactory(
 
             return pooled_attention
 
+        def simple_transformer_encoder(self, inputs):
+            
+            # Apply multi-head self-attention
+            attn_output = Attention()([inputs, inputs, inputs])
+
+            # Add a feed-forward layer
+            ff_output = Dense(units=256, activation=self.activation_fn1)(attn_output)
+
+            # Add a global average pooling layer to summarize the extracted features
+            avg_pooling = GlobalAveragePooling1D()(ff_output)
+
+            return avg_pooling
+
 
         
         ##################################### ################## #####################################
@@ -404,6 +417,8 @@ def CommitDiffModelFactory(
                 encoded = self.encoder_conv_attention(masked_inputs)
             elif encoder == 13:
                 encoded = self.encoder_lstm_attention(masked_inputs)
+            elif encoder == 14:
+                encoded = self.simple_transformer_encoder(masked_inputs)
 
             else:
                 encoded = masked_inputs
