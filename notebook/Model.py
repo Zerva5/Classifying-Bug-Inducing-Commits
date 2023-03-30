@@ -93,7 +93,7 @@ def CommitDiffModelFactory(
             return scale * x
 
         def build(self, input_shape):
-            self.primary_capsule_conv1d = Conv1D(filters=32, kernel_size=3, strides=2, activation='relu')
+            self.primary_capsule_conv1d = Conv1D(filters=32, kernel_size=self.kernel_size, strides=2, activation='relu')
             self.secondary_capsule_dense = Dense(self.num_capsules * self.capsule_dim)
 
         def call(self, inputs):
@@ -159,15 +159,22 @@ def CommitDiffModelFactory(
             self.activation_fn3 = "sigmoid"
             self.loss_fn = "binary_crossentropy"
             self.embedding_dim = 64
+
+            ##### Learning Rate Hyperparams #####
             self.base_lr = 0.06
             self.weight_decay = 0.0001
             self.momentum = 0.925
+            #####################################
+            
             self.unsupervised_data_size = unsupervised_data_size
             self.siam_batch_size = siam_batch_size
             self.steps_per_update = steps_per_update
 
+            #### These hyperparams should be experimented with #############
             self.convolutional_filters = 32
             self.lstm_memory_units = 64
+            self.kernel_size = 3
+            #################################################################
             
             self.encoder = None
             self.siam_model = None
@@ -184,7 +191,7 @@ def CommitDiffModelFactory(
         def encoder_recurrent_convolutional(self, inputs):   
         
             # Add a 1D convolutional layer to extract features from each context
-            conv = Conv1D(filters=self.convolutional_filters, kernel_size=3, activation='relu')(inputs)
+            conv = Conv1D(filters=self.convolutional_filters, kernel_size=self.kernel_size, activation='relu')(inputs)
 
             # Add a max pooling layer to summarize the extracted features
             max_pooling = MaxPooling1D(pool_size=self.context_size)(conv)
@@ -199,7 +206,7 @@ def CommitDiffModelFactory(
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
         
             # Add a 2D convolutional layer to extract features from each context
-            conv = Conv2D(filters=self.convolutional_filters, kernel_size=(6, 6), activation='relu')(embedded_inputs)
+            conv = Conv2D(filters=self.convolutional_filters, kernel_size=(self.kernel_size, self.kernel_size), activation='relu')(embedded_inputs)
 
             # Add a max pooling layer to summarize the extracted features
             max_pooling = MaxPooling2D(pool_size=(self.context_size, 1))(conv)
@@ -294,8 +301,8 @@ def CommitDiffModelFactory(
             embedded_inputs = Embedding(input_dim=MAX_NODE_LOOKUP_NUM + 1, output_dim=self.embedding_dim)(inputs)
 
             # Apply attention augmented convolutions
-            conv = Conv2D(filters=self.embedding_dim, kernel_size=(3,3), padding="same")(embedded_inputs)
-            attention = Conv2D(filters=self.embedding_dim, kernel_size=(3,3), padding="same", activation="sigmoid")(embedded_inputs)
+            conv = Conv2D(filters=self.embedding_dim, kernel_size=(self.kernel_size,self.kernel_size), padding="same")(embedded_inputs)
+            attention = Conv2D(filters=self.embedding_dim, kernel_size=(self.kernel_size,self.kernel_size), padding="same", activation="sigmoid")(embedded_inputs)
             attended_conv = Multiply()([conv, attention])
             x = Add()([embedded_inputs, attended_conv])
             
@@ -334,7 +341,7 @@ def CommitDiffModelFactory(
         
         def encoder_conv_attention(self, inputs):   
 				
-            conv = Conv1D(filters=self.convolutional_filters, kernel_size=3, activation='relu')(inputs)
+            conv = Conv1D(filters=self.convolutional_filters, kernel_size=self.kernel_size, activation='relu')(inputs)
             max_pooling = MaxPooling1D(pool_size=self.context_size)(conv)
 
             attention_output = Attention()([max_pooling, max_pooling])
@@ -343,7 +350,7 @@ def CommitDiffModelFactory(
             return pooled_attention
 
         def encoder_lstm_attention(self, inputs):
-            conv = Conv1D(filters=self.convolutional_filters, kernel_size=3, activation='relu')(inputs)
+            conv = Conv1D(filters=self.convolutional_filters, kernel_size=self.kernel_size, activation='relu')(inputs)
             max_pooling = MaxPooling1D(pool_size=self.context_size)(conv)
             lstm = LSTM(units=self.lstm_memory_units, return_sequences=True)(max_pooling)
 

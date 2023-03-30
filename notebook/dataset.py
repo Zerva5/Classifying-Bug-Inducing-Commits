@@ -126,7 +126,7 @@ import multiprocessing as mp
 def row_to_example_helper(args):
     return row_to_example(args[0], BAG_SIZE=args[1], CONTEXT_SIZE=args[2]), args[0]["Y"]
 
-def get_labelled_data(file, BAG_SIZE=256, CONTEXT_SIZE=16):
+def get_labelled_data(file, BAG_SIZE=256, CONTEXT_SIZE=16, sliceS = None, sliceE = None):
     global COMMIT_LOOKUP
     _preload()
 
@@ -134,6 +134,19 @@ def get_labelled_data(file, BAG_SIZE=256, CONTEXT_SIZE=16):
 
     # Prepare arguments for row_to_example_helper
     args = [(row, BAG_SIZE, CONTEXT_SIZE) for _, row in RAW_EXAMPLES.iterrows() if row['fix_hash'] in COMMIT_LOOKUP and row['bug_hash'] in COMMIT_LOOKUP]
+
+    if(sliceS != None):
+        print("Used slice from",sliceS)
+        print(len(args))
+        args = args[sliceS:]
+        print(len(args))
+
+    if(sliceE != None):
+        print(len(args))
+        print("Used slice to",sliceE)
+        args = args[:sliceE]
+        print(len(args))
+
 
     # Use multiprocessing to parallelize the list comprehension
     with mp.Pool(processes=mp.cpu_count()) as pool:

@@ -1,9 +1,10 @@
 import os
 import pickle
 from tqdm.auto import tqdm
-from dataset import raw_to_padded, _preload, get_labelled
+from dataset import raw_to_padded, _preload, get_labelled, get_labelled_data, POSITIVE_CSV_FILE, NEGATIVE_CSV_FILE
 import numpy as np
 import random
+from sklearn.model_selection import train_test_split
 
 from Commit import CommitFactory
 Commit = CommitFactory()
@@ -46,11 +47,15 @@ SPLIT = 1000
 
 def render_examples(output_dir='../data/commit_lookups/rendered_labelled', BAG_SIZE=256, CONTEXT_SIZE=16, verbose=True):
     _preload()
-    X_train, X_test, y_train, y_test = get_labelled(BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
+
+
+    X_train, y_train = get_labelled_data(POSITIVE_CSV_FILE, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE)
+    X_train, X_test, y_train, y_test = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
+   
     os.makedirs(output_dir, exist_ok=True)
     num_files = (len(X_train) + len(X_test)) // SPLIT + 1
     for i in range(num_files):
-        filename = os.path.join(output_dir, f'rendered_labelled_{i}.pickle')
+        filename = os.path.join(output_dir, f'rendered_labelled_p{i}.pickle')
         start_idx = i * SPLIT
         end_idx = (i + 1) * SPLIT
         X_train_subset = X_train[start_idx:end_idx]
@@ -59,6 +64,43 @@ def render_examples(output_dir='../data/commit_lookups/rendered_labelled', BAG_S
         y_test_subset = y_test[start_idx:end_idx]
         with open(filename, 'wb') as f_out:
             pickle.dump([X_train_subset, X_test_subset, y_train_subset, y_test_subset], f_out)
+
+    del X_test, y_test, X_train, y_train
+
+    X_train, y_train = get_labelled_data(NEGATIVE_CSV_FILE, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE, sliceE=6000)
+    X_train, X_test, y_train, y_test = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
+
+    num_files = (len(X_train) + len(X_test)) // SPLIT + 1
+    for i in range(num_files):
+        filename = os.path.join(output_dir, f'rendered_labelled_n{i}.pickle')
+        start_idx = i * SPLIT
+        end_idx = (i + 1) * SPLIT
+        X_train_subset = X_train[start_idx:end_idx]
+        X_test_subset = X_test[start_idx:end_idx]
+        y_train_subset = y_train[start_idx:end_idx]
+        y_test_subset = y_test[start_idx:end_idx]
+        with open(filename, 'wb') as f_out:
+            pickle.dump([X_train_subset, X_test_subset, y_train_subset, y_test_subset], f_out)
+
+    del X_test, y_test, X_train, y_train
+
+    X_train, y_train = get_labelled_data(NEGATIVE_CSV_FILE, BAG_SIZE=BAG_SIZE, CONTEXT_SIZE=CONTEXT_SIZE, sliceS=6000)
+    X_train, X_test, y_train, y_test = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
+
+    num_files = (len(X_train) + len(X_test)) // SPLIT + 1
+    for i in range(num_files):
+        filename = os.path.join(output_dir, f'rendered_labelled_nn{i}.pickle')
+        start_idx = i * SPLIT
+        end_idx = (i + 1) * SPLIT
+        X_train_subset = X_train[start_idx:end_idx]
+        X_test_subset = X_test[start_idx:end_idx]
+        y_train_subset = y_train[start_idx:end_idx]
+        y_test_subset = y_test[start_idx:end_idx]
+        with open(filename, 'wb') as f_out:
+            pickle.dump([X_train_subset, X_test_subset, y_train_subset, y_test_subset], f_out)
+
+
+
 
 def get_rendered_examples(balance=False, input_dir='../data/commit_lookups/rendered_labelled'):
     X_train = []
