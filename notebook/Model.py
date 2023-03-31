@@ -20,6 +20,7 @@ from tensorflow.keras.callbacks import Callback
 from tensorflow.keras import backend as k
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.metrics import Precision, Recall
 
 from vocab import MAX_NODE_LOOKUP_NUM
 from tqdm.auto import tqdm
@@ -28,6 +29,11 @@ def get_lr_metric(optimizer):
     def lr(y_true, y_pred):
         return optimizer.lr
     return lr
+
+def f1_score(y_true, y_pred):
+    precision = Precision()(y_true, y_pred)
+    recall = Recall()(y_true, y_pred)
+    return 2 * ((precision * recall) / (precision + recall + tf.keras.backend.epsilon()))
 
 
 def CommitDiffModelFactory(
@@ -535,10 +541,8 @@ def CommitDiffModelFactory(
             lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.supervised_base_lr, self.supervised_epochs * (self.supervised_data_size / self.supervised_batch_size))
             optimizer=Adam(learning_rate=lr_schedule)
             
-            lr_metric = get_lr_metric(optimizer)
-           
             # Compile model
-            model.compile(optimizer=optimizer, loss=self.loss_fn, metrics=['accuracy', lr_metric])
+            model.compile(optimizer=optimizer, loss=self.loss_fn, metrics=['accuracy', f1_score, Precision(name='precision'), Recall(name='recall')])
             
             return model
 
