@@ -30,9 +30,12 @@ def get_lr_metric(optimizer):
         return optimizer.lr
     return lr
 
+precision_obj = Precision()
+recall_obj = Recall()
+
 def f1_score(y_true, y_pred):
-    precision = Precision()(y_true, y_pred)
-    recall = Recall()(y_true, y_pred)
+    precision = precision_obj(y_true, y_pred)
+    recall = recall_obj(y_true, y_pred)
     return 2 * ((precision * recall) / (precision + recall + tf.keras.backend.epsilon()))
 
 

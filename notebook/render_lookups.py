@@ -5,6 +5,7 @@ from dataset import raw_to_padded, _preload, get_labelled, get_labelled_data, PO
 import numpy as np
 import random
 from sklearn.model_selection import train_test_split
+from imblearn.over_sampling import RandomOverSampler
 
 from Commit import CommitFactory
 Commit = CommitFactory()
@@ -100,6 +101,27 @@ def render_examples(output_dir='../data/commit_lookups/rendered_labelled', BAG_S
             pickle.dump([X_train_subset, X_test_subset, y_train_subset, y_test_subset], f_out)
 
 
+def oversample_data(X, y):
+    # Separate the features
+    X_name = np.array([tup[0] for tup in X])
+    X_timestamp = np.array([tup[1] for tup in X])
+    X_message = np.array([tup[2] for tup in X])
+    X_bag1 = np.array([tup[3] for tup in X])
+    X_bag2 = np.array([tup[4] for tup in X])
+
+    # Apply Random Oversampling to each feature
+    ros = RandomOverSampler()
+    indices_resampled, y_resampled = ros.fit_resample(np.arange(len(y)).reshape(-1, 1), y)
+    indices_resampled = indices_resampled.flatten()
+    X_name = X_name[indices_resampled]
+    X_timestamp = X_timestamp[indices_resampled]
+    X_message = X_message[indices_resampled]
+    X_bag1 = X_bag1[indices_resampled]
+    X_bag2 = X_bag2[indices_resampled]
+
+    # Reassemble the tuples
+    X_resampled = list(zip(X_name, X_timestamp, X_message, X_bag1, X_bag2))
+    return X_resampled, y_resampled
 
 
 def get_rendered_examples(balance=False, input_dir='../data/commit_lookups/rendered_labelled'):
@@ -116,7 +138,13 @@ def get_rendered_examples(balance=False, input_dir='../data/commit_lookups/rende
             y_test.extend(data[3])
     
     if(balance):
-        X_train, y_train = zip(*random.sample([(x, y) for x, y in zip(X_train, y_train) if y == 0], sum(y_train)) + [(x, y) for x, y in zip(X_train, y_train) if y == 1])
-        X_test, y_test = zip(*random.sample([(x, y) for x, y in zip(X_test, y_test) if y == 0], sum(y_test)) + [(x, y) for x, y in zip(X_test, y_test) if y == 1])
+        #This would be undersampling / downsampling:
+        # X_train, y_train = zip(*random.sample([(x, y) for x, y in zip(X_train, y_train) if y == 0], sum(y_train)) + [(x, y) for x, y in zip(X_train, y_train) if y == 1])
+        # X_test, y_test = zip(*random.sample([(x, y) for x, y in zip(X_test, y_test) if y == 0], sum(y_test)) + [(x, y) for x, y in zip(X_test, y_test) if y == 1])
+
+        # Apply oversampling to both training and test data
+        X_train, y_train = oversample_data(X_train, y_train)
+        X_test, y_test = oversample_data(X_test, y_test)
+
 
     return X_train, X_test, y_train, y_test
