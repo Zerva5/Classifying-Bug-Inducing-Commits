@@ -12,3 +12,4 @@ data_scripts/gh_access_token.txt
 clones/
 gh_access_token.txt
 
+notebook/checkpoints/

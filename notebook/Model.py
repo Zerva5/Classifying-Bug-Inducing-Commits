@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import gc
+import pickle
 
 #Disable import warnings for tensorflow
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -21,9 +22,28 @@ from tensorflow.keras import backend as k
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.metrics import Precision, Recall
+from tensorflow.keras.models import load_model
 
 from vocab import MAX_NODE_LOOKUP_NUM
 from tqdm.auto import tqdm
+
+CHECKPOINTS_DIR = 'checkpoints'
+
+class CustomModelCheckpoint(Callback):
+    def __init__(self, model):
+        super(CustomModelCheckpoint, self).__init__()
+        self.model = model
+        self.save_dir = CHECKPOINTS_DIR
+        self.save_freq = 1
+        os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
+
+    def on_epoch_end(self, epoch, logs=None):
+        if epoch % self.save_freq == 0:
+            history = self.model.history.history
+            weights = self.model.get_weights()
+            filepath = os.path.join(CHECKPOINTS_DIR, f"model_{epoch}.pkl")
+            with open(filepath, 'wb') as f:
+                pickle.dump([history, weights], f)
 
 def get_lr_metric(optimizer):
     def lr(y_true, y_pred):
@@ -212,13 +232,13 @@ def CommitDiffModelFactory(
         def encoder_recurrent_convolutional(self, inputs):   
         
             # Add a 1D convolutional layer to extract features from each context
-            conv = Conv1D(filters=self.convolutional_filters, kernel_size=self.kernel_size, activation='relu')(inputs)
+            conv = Conv1D(name="encoder_conv", filters=self.convolutional_filters, kernel_size=self.kernel_size, activation='relu')(inputs)
 
             # Add a max pooling layer to summarize the extracted features
-            max_pooling = MaxPooling1D(pool_size=self.context_size)(conv)
+            max_pooling = MaxPooling1D(name="encoder_max_pooling", pool_size=self.context_size)(conv)
 
             # Add a recurrent layer to capture temporal dependencies within each context
-            lstm = LSTM(units=self.lstm_memory_units)(max_pooling)
+            lstm = LSTM(name="encoder_lstm", units=self.lstm_memory_units)(max_pooling)
 
             return lstm
         
@@ -400,9 +420,9 @@ def CommitDiffModelFactory(
             
         def build_encoder(self, encoder=0):
             
-            inputs = Input(shape=self.input_shape)
+            inputs = Input(name="encoder_input", shape=self.input_shape)
 
-            masked_inputs = Masking()(inputs)
+            masked_inputs = Masking(name="encoder_masking")(inputs)
             
             
             ##########################################################
@@ -444,10 +464,10 @@ def CommitDiffModelFactory(
             ##########################################################
 
             # Dropout layer to prevent overfitting
-            dropout = Dropout(rate=self.rate)(encoded)
+            dropout = Dropout(name="encoder_dropout", rate=self.rate)(encoded)
 
             # Fixed length vector representation
-            outputs = Dense(units=self.fixed_vector_size)(dropout)
+            outputs = Dense(name="encoder_dense", units=self.fixed_vector_size)(dropout)
 
             # Define encoder model
             encoder = tf.keras.Model(inputs=inputs, outputs=outputs)
@@ -456,11 +476,11 @@ def CommitDiffModelFactory(
         def build_siam_model(self):
             
             # Create SimSiam model
-            x1 = Input(shape=self.input_shape)
+            x1 = Input(name="siam_input", shape=self.input_shape)
             x2 = x1
 
             # Define a lambda layer to shuffle the input tensors
-            shuffle_layer = Lambda(lambda x: tf.random.shuffle(x))
+            shuffle_layer = Lambda(lambda x: tf.random.shuffle(x), name="siam_shuffle")
 
             # Apply the shuffle layer to the input tensors
             x1_shuffled = shuffle_layer(x1)
@@ -471,8 +491,8 @@ def CommitDiffModelFactory(
             z2 = self.encoder(x2_shuffled)
             
             # Predict a transformation of the first encoding
-            p1 = Dense(units=self.fixed_vector_size, activation=self.activation_fn2)(z1)
-            p2 = Dense(units=self.fixed_vector_size, activation=self.activation_fn2)(z2)
+            p1 = Dense(name="siam_dense_p1", units=self.fixed_vector_size, activation=self.activation_fn2)(z1)
+            p2 = Dense(name="siam_dense_p2", units=self.fixed_vector_size, activation=self.activation_fn2)(z2)
             
             #Loss function
             def D(p, z):
@@ -486,7 +506,7 @@ def CommitDiffModelFactory(
                 return D(p1, z2) / 2 + D(p2, z1) / 2
 
             # Concatenate the outputs
-            concatenated_outputs = Concatenate(axis=-1)([p1, p2, z1, z2])
+            concatenated_outputs = Concatenate(name="siam_concat", axis=-1)([p1, p2, z1, z2])
 
             # Define the model
             model = tf.keras.Model(inputs=x1, outputs=concatenated_outputs)
@@ -495,23 +515,40 @@ def CommitDiffModelFactory(
 
             # Define the optimizer with SGD, weight decay, and momentum
             optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
-            lr_metric = get_lr_metric(optimizer)
+            self.lr_metric = get_lr_metric(optimizer)
 
             model = GradientAccumulateModel(accum_steps=self.steps_per_update, inputs=model.input, outputs=model.output)
 
             # Compile the model
-            model.compile(optimizer=optimizer, loss=siamese_loss, run_eagerly=True, metrics=[lr_metric])
+            model.compile(optimizer=optimizer, loss=siamese_loss, run_eagerly=True, metrics=[self.lr_metric])
 
             return model
+        
+        def reload_saved_siam_model(self, filename, generator):
+            with open(os.path.join(CHECKPOINTS_DIR, filename), 'rb') as f:
+                data = pickle.load(f)
+                history = data[0]
+                weights = data[1]
 
+            print("Loaded saved file")
+            print("Running single fit() epoch to intialize model weights")
+            self.siam_model.fit(generator, epochs=1, verbose=1, use_multiprocessing=True, callbacks=ClearMemory())
+            print("Resetting States")
+
+            self.siam_model.reset_states()
+            print("Updating Weights")
+            self.siam_model.set_weights(weights)
+
+            return history
+        
         def build_binary_classification_model(self):
             
             # Create binary classification model
-            name_input = Input(shape=(1,))
-            timestamp_input = Input(shape=(1,))
-            message_input = Input(shape=(3,))
-            bag1_input = Input(shape=self.input_shape)
-            bag2_input = Input(shape=self.input_shape)
+            name_input = Input(name="class_name_input", shape=(1,))
+            timestamp_input = Input(name="class_timestamp_input", shape=(1,))
+            message_input = Input(name="class_message_input", shape=(3,))
+            bag1_input = Input(name="class_bag1_input", shape=self.input_shape)
+            bag2_input = Input(name="class_bag2_input", shape=self.input_shape)
             
             # Encode bag of contexts using the same encoder model
             encoded1 = self.encoder(bag1_input)
@@ -526,17 +563,17 @@ def CommitDiffModelFactory(
 
             #Use attention between the 2 bags
             # Compute similarity matrix between bags
-            context = Attention()([encoded1, encoded2])
+            context = Attention(name="class_attention")([encoded1, encoded2])
             
             # merged = Concatenate()([encoded1, encoded2, name_reshaped, timestamp_reshaped, message_reshaped])
-            merged = Concatenate()([context, name_reshaped, timestamp_reshaped, message_reshaped])
+            merged = Concatenate(name="class_concat")([context, name_reshaped, timestamp_reshaped, message_reshaped])
             
             # Binary classification output
-            binary_classification = Dense(units=self.bag_size * 2, activation=self.activation_fn3)(merged)
-            binary_classification = Dense(units=self.bag_size, activation=self.activation_fn3)(binary_classification)
-            binary_classification = Dense(units=self.bag_size / 2, activation=self.activation_fn3)(binary_classification)
-            binary_classification = Dense(units=self.bag_size / 4, activation=self.activation_fn3)(binary_classification)
-            binary_classification = Dense(units=1, activation=self.activation_fn3)(binary_classification)
+            binary_classification = Dense(name="class_dense1", units=self.bag_size * 2, activation=self.activation_fn3)(merged)
+            binary_classification = Dense(name="class_dense2", units=self.bag_size, activation=self.activation_fn3)(binary_classification)
+            binary_classification = Dense(name="class_dense3", units=self.bag_size / 2, activation=self.activation_fn3)(binary_classification)
+            binary_classification = Dense(name="class_dense4", units=self.bag_size / 4, activation=self.activation_fn3)(binary_classification)
+            binary_classification = Dense(name="class_dense5", units=1, activation=self.activation_fn3)(binary_classification)
             
             # Define model
             model = tf.keras.Model(inputs=[name_input, timestamp_input, message_input, bag1_input, bag2_input], outputs=binary_classification)
@@ -551,9 +588,13 @@ def CommitDiffModelFactory(
 
         def fit_siam(self, X_train, epochs, verbose=0): 
 
-            return self.siam_model.fit(X_train, X_train, epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
+            return self.siam_model.fit(X_train, X_train, epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model)])
 
         def fit_siam_generator(self, generator, epochs, num_runs=4, run_epochs=8, verbose=0): 
+        
+            if num_runs == None:
+                return self.siam_model.fit(generator, epochs=epochs, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model)])
+
 
             # Define a list to store the best weights obtained during training
             best_weights = None
@@ -566,7 +607,7 @@ def CommitDiffModelFactory(
                 self.siam_model.set_weights(initial_weights)
 
                 # Train the model for a fixed number of epochs
-                history = self.siam_model.fit(generator, epochs=run_epochs, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory()])
+                history = self.siam_model.fit(generator, epochs=run_epochs, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model)])
 
                 # Retrieve the loss value from the last epoch
                 metric_value = history.history['loss'][-1]
@@ -579,7 +620,7 @@ def CommitDiffModelFactory(
             self.siam_model.set_weights(best_weights)
 
             # Train the model for the remaining epochs
-            return self.siam_model.fit(generator, epochs=(epochs - run_epochs), verbose=verbose, use_multiprocessing=True, callbacks=ClearMemory())
+            return self.siam_model.fit(generator, epochs=(epochs - run_epochs), verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model)])
 
         def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0, validation_data=None):
 
