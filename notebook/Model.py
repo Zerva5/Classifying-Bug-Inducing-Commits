@@ -511,7 +511,20 @@ def CommitDiffModelFactory(
             # Define the model
             model = tf.keras.Model(inputs=x1, outputs=concatenated_outputs)
 
+            # Cosine Decay Learning Schedule - Use this OR Step Decay
             lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.base_lr * (self.siam_batch_size / self.steps_per_update)/256, self.unsupervised_epochs * (self.unsupervised_data_size / (self.siam_batch_size / self.steps_per_update)))
+            
+            # Step Decay Learning Schedule - Use this OR Cosine Decay
+            # # Calculate steps per epoch
+            # steps_per_epoch = self.unsupervised_data_size // self.siam_batch_size
+            # # Define the boundaries in terms of epochs - Change these boundaries to control when step decay occurs
+            # epoch_boundaries = [100, 200, 300, 400]
+            # # Convert epoch boundaries to step boundaries
+            # step_boundaries = [epoch_boundary * steps_per_epoch for epoch_boundary in epoch_boundaries]
+            # # Define the learning rate values for each step boundary
+            # base_siam_lr = self.base_lr * (self.siam_batch_size / self.steps_per_update)/256
+            # lr_rates = [base_siam_lr, 0.1 * base_siam_lr, 0.01 * base_siam_lr, 0.001 * base_siam_lr, 0.0001 * base_siam_lr]
+            # lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(step_boundaries, lr_rates)
 
             # Define the optimizer with SGD, weight decay, and momentum
             optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
