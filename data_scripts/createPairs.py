@@ -266,7 +266,103 @@ def negativeDifferentFixSameRepo(pairs, n):
 
     return df
     
+
+_NoCloseCommitsFound = 0
+_TotalCloseCommits = 0
+def negativeCloseToFix(pairs, max_hops, n, file_tolerance = 1):
+
+    """Returns a new DataFrame with negative examples where the bug is a commit before or after the true bug in the same repository."""
+
+    newRowDFs = []
+
+    # for each pair, load the commit for the bug causing commit
+    # A random commit at most max_hops commits away from the bug causing commit
+
+    repoStrings = pairs['fix_repo'].unique()
+    repoDict = {}
+    for r in repoStrings:
+        try:
+            repoDict[r] = git.Repo(os.path.join("clones", r.replace('/', '-')))
             
+        except:
+            raise Exception("should not have any repos that are not cloned")
+
+    def get_negative_examples(row, pairs, max_hops, n, min_hops=0):
+        newRows = []
+        tempn = n
+
+        i_fixHash = row.fix_hash
+        i_repo = row.fix_repo
+        i_bugHash = row.bug_hash
+        i_fixIndex = row.fix_index
+
+        ## load repo into repo object
+        repo = repoDict[i_repo]
+
+        # get the commit for the bug causing commit
+        bug_commit = repo.commit(i_bugHash)
+
+        ## get files that the bug commit changed
+        bug_commit_files = bug_commit.stats.files.keys()
+        #print("LEN", len(bug_commit_files))
+
+        ## Set the number of files that the bug commit and the close commit must have in common
+        commit_file_tolerance = min(file_tolerance, len(bug_commit_files))
+
+        closeCommits = []
+
+        # run bash command
+        # git log --pretty=format:%H --max-count=1 --skip=0 --reverse
+        ## Commits after the bug commit
+        closeCommits.extend(repo.git.log('--pretty=format:%H', '--max-count={}'.format(max_hops), '--skip={}'.format(min_hops), '--reverse', i_bugHash + '..').strip().split('\n'))
+        ## Commits before the bug commit
+        closeCommits.extend(repo.git.log('--pretty=format:%H', '--max-count={}'.format(max_hops), '--skip={}'.format(min_hops + 1), i_bugHash).strip().split('\n'))
+
+        # get the commits that changed at least 2 of the same files as the bug commit
+        closeCommits = [c for c in closeCommits if len(set(repo.commit(c).stats.files.keys()).intersection(bug_commit_files)) >= commit_file_tolerance]
+
+        # get the commits that are not the bug commit or the fix commit
+        closeCommits = [c for c in closeCommits if c != i_bugHash and c != i_fixHash]
+
+        # THis doesn't really matter tbh
+        # Make sure chosen commits are not already in the pairs dataframe
+        #closeCommits = [c for c in closeCommits if c not in pairs['bug_hash'].unique()]
+
+        # select n random commits
+        closeCommits = random.sample(closeCommits, min(n, len(closeCommits)))
+
+        global _TotalCloseCommits
+        _TotalCloseCommits += len(closeCommits)
+
+        #print("Number of close commits: {}".format(len(closeCommits)))
+        if len(closeCommits) == 0:
+            global _NoCloseCommitsFound
+            _NoCloseCommitsFound += 1
+
+
+
+        # create a new row for each commit
+        for c in closeCommits:
+            newRows.append({'fix_hash': i_fixHash, 'bug_hash': c, 'fix_repo': i_repo, 'bug_repo': i_repo, 'fix_index': i_fixIndex, 'bug_index': repo.commit(c).committed_date})
+
+
+        #print(newRows)
+        return pd.DataFrame(newRows)
+
+    for p in tqdm(pairs.itertuples(), total=len(pairs)):
+        newRowDFs.append(get_negative_examples(p, pairs, max_hops, n))
+
+
+    print("Number of new rows: {}".format(len(newRowDFs[-1])))
+    print("Total close commits: {}".format(_TotalCloseCommits))
+    print("Average close commits: {}".format(_TotalCloseCommits / len(pairs)))
+    print("Number of no close commits found: {}".format(_NoCloseCommitsFound))
+    df = pd.concat(newRowDFs)
+    print("New DF")
+    print(df)
+    return df
+
+
 def createNegativeExamples(pairs, searchPairs, maxNegatives):
     """
     Returns a new DataFrame with a combination of "positive" and "negative" examples.
@@ -279,12 +375,15 @@ def createNegativeExamples(pairs, searchPairs, maxNegatives):
     Returns:
     - pd.DataFrame: A Pandas DataFrame with columns fix_hash, bug_hash, and Y label.
     """
+
+    maxHops = 30
     
     negList = []
-    print("generating random from same repo")
-    negList.append(negativeRandomSameRepo(pairs, searchPairs, maxNegatives))
-    print("generating negative using other fixes from the same repo")
-    negList.append(negativeDifferentFixSameRepo(pairs, maxNegatives))
+    #print("generating random from same repo")
+    #negList.append(negativeRandomSameRepo(pairs, searchPairs, maxNegatives))
+    # print("generating negative using other fixes from the same repo")
+    # negList.append(negativeDifferentFixSameRepo(pairs, maxNegatives))
+    negList.append(negativeCloseToFix(pairs, maxHops, maxNegatives, file_tolerance=3))
         
     df = pd.concat(negList)
     df['Y'] = 0
@@ -353,6 +452,16 @@ def exportSupervisedCommits(rootPath, outputName):
     df = splitPairsAndCombine(pairs)
     df.to_csv(os.path.join(rootPath,outputName), index=False)
     
+def fixPickleIndex(df, all_apache_commits):
+    df = df.merge(all_apache_commits, how='inner', right_on=['sha', 'repo'], left_on=['bug_hash', 'bug_repo'])
+    df = df.drop(columns=['repo', 'files_changed', 'diff_line_count'])
+    df = df.rename(columns={"pickle_index":"bug_index"})
+    
+    df = df.merge(all_apache_commits, how='inner', right_on=['sha', 'repo'], left_on=['fix_hash', 'bug_repo'])
+    df = df.drop(columns=['repo', 'files_changed', 'diff_line_count'])
+    df = df.rename(columns={"pickle_index":"fix_index"})
+    return df
+
 
 def main():
     if(len(sys.argv) != 5):
@@ -377,26 +486,19 @@ def main():
 
     print("filtering positive pairs")
     posPairs = posPairs[(posPairs['bug_hash'].isin(all_apache_commits.index)) & (posPairs['fix_hash'].isin(all_apache_commits.index))]
-
-    ## Getting the pickle index for the bug and fix commits
-    posPairs = posPairs.merge(all_apache_commits, how='inner', right_on=['sha', 'repo'], left_on=['bug_hash', 'bug_repo'])
-    posPairs = posPairs.drop(columns=['repo', 'files_changed', 'diff_line_count'])
-    posPairs = posPairs.rename(columns={"pickle_index":"bug_index"})
-    
-    posPairs = posPairs.merge(all_apache_commits, how='inner', right_on=['sha', 'repo'], left_on=['fix_hash', 'bug_repo'])
-    posPairs = posPairs.drop(columns=['repo', 'files_changed', 'diff_line_count'])
-    posPairs = posPairs.rename(columns={"pickle_index":"fix_index"})
+    posPairs = fixPickleIndex(posPairs, all_apache_commits)
     
     print("positive examples:", posPairs.shape[0])
 
-    posPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_positive_pairs2.csv"))
+    #posPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_positive_pairs2.csv"))
 
 
     print("generating negative pairs")
 
     negPairs = createNegativeExamples(posPairs, searchPairs, numNegatives)
+    negPairs = fixPickleIndex(negPairs, all_apache_commits)
 
-    negPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_negative_pairs.csv"), index=False)
+    negPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_close_broad_negative_pairs.csv"), index=False)
 
 
     #print("negative examples:", withNegative.shape[0] - posPairs.shape[0])
