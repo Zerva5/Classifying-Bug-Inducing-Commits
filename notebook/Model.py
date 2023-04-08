@@ -39,16 +39,19 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
         self.old_weights = None
         self.old_loss = None
 
-    def on_train_begin(self, logs=None):
-        self.temperatures = []
+    def on_epoch_end(self, epoch, logs={}):
 
-    def on_epoch_end(self, epoch, logs=None):
         if epoch % self.interval == 0 and epoch > self.persistance:
             self.old_weights = self.model.get_weights()
             self.old_loss = logs["loss"]
             mean = self.temperature / 10
             random_weights = [w + np.random.normal(loc=0, scale=mean, size=w.shape) for w in self.old_weights]
             self.model.set_weights(random_weights)
+
+        if epoch % self.interval <= self.persistance and epoch > self.persistance:
+            logs["annealing_delta"] = logs["loss"] - self.old_loss
+        else:
+            logs["annealing_delta"] = 0
 
         if epoch % self.interval == self.persistance and epoch > self.persistance:
             new_loss = logs["loss"]
@@ -63,15 +66,14 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
                 # Revert to old weights
                 self.model.set_weights(self.old_weights)
 
-            # Update the temperature based on the cooling schedule
-            self.temperature = self.cooling_schedule(self.temperature, epoch)
-            self.temperatures.append(self.temperature)
+        # Update the temperature based on the cooling schedule
+        self.temperature = self.cooling_schedule(self.temperature, epoch)
 
         # Add the temperature to the logs dictionary
         logs["temperature"] = self.temperature
 
     def cooling_schedule(self, temperature, epoch):
-        return temperature * (0.995**self.interval)
+        return temperature * 0.995
 
     def acceptance_func(self, delta_loss, temperature):
         return np.exp(-delta_loss / temperature) - 0.2
@@ -245,7 +247,7 @@ def CommitDiffModelFactory(
             self.embedding_dim = 64
 
             ##### Learning Rate Hyperparams #####
-            self.base_lr = 0.025
+            self.base_lr = 0.035
             self.weight_decay = 0.00005
             self.momentum = 0.925
 
