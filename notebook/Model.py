@@ -31,62 +31,46 @@ CHECKPOINTS_DIR = 'checkpoints'
 
 
 class AdditionalValidationSets(Callback):
-    def __init__(self, validation_sets, verbose=0, batch_size=None):
-        """
-        :param validation_sets:
-        a list of 3-tuples (validation_data, validation_targets, validation_set_name)
-        or 4-tuples (validation_data, validation_targets, sample_weights, validation_set_name)
-        :param verbose:
-        verbosity mode, 1 or 0
-        :param batch_size:
-        batch size to be used when evaluating on the additional datasets
-        """
+    def __init__(self, validation_sets, verbose=0):
+
         super(AdditionalValidationSets, self).__init__()
+
         self.validation_sets = validation_sets
-        for validation_set in self.validation_sets:
-            if len(validation_set) not in [3, 4]:
-                raise ValueError()
-        self.epoch = []
-        self.history = {}
-        self.verbose = verbose
-        self.batch_size = batch_size
+
+        if(len(self.validation_sets) == 0):
+            raise ValueError("No validation sets provided")
+        elif (len(self.validation_sets[0]) != 3):
+            raise ValueError("Validation sets must be a list of tuples (name, x, y)")
+
+        self.validation_results = {}
+
+        for name, x, y in self.validation_sets:
+            if (x is None or y is None):
+                raise ValueError("Validation set x and y must not be None")
+            if(name in self.validation_results.keys()):
+                raise ValueError("Validation set names must be unique")
+
+            self.validation_results[name] = {}
+
+        self.verbose = verbose 
 
     def on_train_begin(self, logs=None):
-        self.epoch = []
-        self.history = {}
+        ## initialize validation results to be a dictionary of validation set names 
+        self.validation_results = {name: {} for name in self.validation_results.keys()}
+
 
     def on_epoch_end(self, epoch, logs=None):
-        logs = logs or {}
-        self.epoch.append(epoch)
+        
+        for name, x, y in self.validation_sets:
+            results = self.model.evaluate(x, y, verbose=0)
 
-        # record the same values as History() as well
-        for k, v in logs.items():
-            self.history.setdefault(k, []).append(v)
-
-        # evaluate on the additional validation sets
-        for validation_set in self.validation_sets:
-            if len(validation_set) == 3:
-                validation_data, validation_targets, validation_set_name = validation_set
-                sample_weights = None
-            elif len(validation_set) == 4:
-                validation_data, validation_targets, sample_weights, validation_set_name = validation_set
-            else:
-                raise ValueError()
-
-            results = self.model.evaluate(x=validation_data,
-                                          y=validation_targets,
-                                          verbose=self.verbose,
-                                          sample_weight=sample_weights,
-                                          batch_size=self.batch_size)
+            for metric, result in zip(self.model.metrics_names, results):
+                logs[f'{name}_{metric}'] = result
+    
 
 
-            for metric, result in zip(self.model.metrics_names,results):
-                valuename = validation_set_name + '_' + metric
 
-                if(valuename not in self.history.keys()):
-                    self.history[valuename] = []
-                
-                self.history[valuename].append(result)
+  
 
 class CustomModelCheckpoint(Callback):
     def __init__(self, model):
@@ -606,7 +590,7 @@ def CommitDiffModelFactory(
 
             print("Loaded saved file")
             print("Running single fit() epoch to intialize model weights")
-            self.siam_model.fit(generator, epochs=1, verbose=1, use_multiprocessing=True, callbacks=ClearMemory())
+            self.siam_model.fit(generator.take(1), epochs=1, verbose=1, use_multiprocessing=True, callbacks=ClearMemory())
             print("Resetting States")
 
             self.siam_model.reset_states()
@@ -711,18 +695,18 @@ def CommitDiffModelFactory(
             if(validation_data is not None):
                 val_data = []
                 for val in validation_data:
-                    X_test = val[0]
-                    y_test = val[1]
+                    X_test = val[1]
+                    y_test = val[2]
 
                     X_test_name = np.array([tup[0] for tup in X_test])
                     X_test_timestamp = np.array([tup[1] for tup in X_test])
                     X_test_message = np.array([tup[2] for tup in X_test])
                     X_test_bag1 = np.array([tup[3] for tup in X_test])
                     X_test_bag2 = np.array([tup[4] for tup in X_test])
-                    val_data.append(([X_test_name, X_test_timestamp, X_test_message, X_test_bag1, X_test_bag2],y_test, val[2]))
+                    val_data.append((val[0], [X_test_name, X_test_timestamp, X_test_message, X_test_bag1, X_test_bag2],y_test))
                 
-                history = AdditionalValidationSets(validation_sets=val_data)
-                callbacks = [history]
+                validation_callback = AdditionalValidationSets(validation_sets=val_data)
+                callbacks.append(validation_callback)
 
             else:
                 val_data = None
