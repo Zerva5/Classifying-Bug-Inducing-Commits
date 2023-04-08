@@ -67,8 +67,8 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
             self.temperature = self.cooling_schedule(self.temperature, epoch)
             self.temperatures.append(self.temperature)
 
-            # Add the temperature to the logs dictionary
-            logs["temperature"] = self.temperature
+        # Add the temperature to the logs dictionary
+        logs["temperature"] = self.temperature
 
     def cooling_schedule(self, temperature, epoch):
         return temperature * (0.995**self.interval)
