@@ -30,57 +30,50 @@ from tqdm.auto import tqdm
 CHECKPOINTS_DIR = 'checkpoints'
 
 
-class TemperatureMetric(tf.keras.metrics.Metric):
-    def __init__(self, name='temperature', **kwargs):
-        super(TemperatureMetric, self).__init__(name=name, **kwargs)
-        self.temperature = self.add_weight(name='temperature', initializer='zeros')
+class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
+    def __init__(self, initial_temperature):
+        super(SimulatedAnnealingCallback, self).__init__()
+        self.temperature = initial_temperature
+        self.old_weights = None
+        self.old_loss = None
 
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        # This method is required but we don't need to update anything for this metric
-        pass
+    def on_train_begin(self, logs=None):
+        self.temperatures = []
 
-    def result(self):
-        return self.temperature
-
-    def reset_state(self):
-        self.temperature.assign(0.0)
-
-class SimulatedAnnealingWeights(tf.keras.callbacks.Callback):
-    def __init__(self, initial_temp, anneal_steps, T_min=1e-5, random_seed=None):
-        self.initial_temp = initial_temp
-        self.anneal_steps = anneal_steps
-        self.T_min = T_min
-        self.random_seed = random_seed
-        self.rng = np.random.default_rng(self.random_seed)
-        self.step_count = 0
-
-    def on_batch_end(self, batch, logs=None):
-        T = self.initial_temp * (1 - self.model.optimizer.iterations.numpy() / self.anneal_steps)
-        T = max(T, self.T_min)
-
-        for layer in self.model.layers:
-            if isinstance(layer, (tf.keras.layers.Dense, tf.keras.layers.LSTM, tf.keras.layers.Conv1D)):
-                weights_list = layer.get_weights()
-                perturbed_weights_list = []
-
-                for weights in weights_list:
-                    weight_perturbation = self.rng.normal(0, T, weights.shape)
-                    perturbed_weights_list.append(weights + weight_perturbation)
-
-                layer.set_weights(perturbed_weights_list)
-        
-        # Find the TemperatureMetric instance and set the temperature value
-        for metric in self.model.metrics:
-            if isinstance(metric, TemperatureMetric):
-                metric.temperature.assign(T)
-                break
-
-    
     def on_epoch_end(self, epoch, logs=None):
-        T = self.initial_temp * (1 - self.model.optimizer.iterations.numpy() / self.anneal_steps)
-        T = max(T, self.T_min)
-        logs = logs or {}
-        logs["temperature"] = T
+        if epoch % 4 == 0 and epoch > 2:
+            self.old_weights = self.model.get_weights()
+            self.old_loss = logs["loss"]
+            random_weights = [w + np.random.normal(loc=0, scale=self.temperature, size=w.shape) for w in self.old_weights]
+            self.model.set_weights(random_weights)
+
+        if epoch % 4 == 2 and epoch > 2:
+            new_loss = logs["loss"]
+
+            delta_loss = new_loss - self.old_loss
+            acceptance_value = self.acceptance_func(delta_loss, self.temperature)
+
+            if delta_loss < 0 or np.random.rand() < acceptance_value:
+                # Keep the new weights
+                pass
+            else:
+                # Revert to old weights
+                self.model.set_weights(self.old_weights)
+
+            # Update the temperature based on the cooling schedule
+            self.temperature = self.cooling_schedule(self.temperature, epoch)
+            self.temperatures.append(self.temperature)
+
+            # Add the temperature to the logs dictionary
+            logs["temperature"] = self.temperature
+
+    def cooling_schedule(self, temperature, epoch):
+        return temperature * 0.95
+
+    def acceptance_func(self, delta_loss, temperature):
+        return np.exp(-delta_loss / temperature)
+
+
 
 class CustomModelCheckpoint(Callback):
     def __init__(self, model):
@@ -249,7 +242,7 @@ def CommitDiffModelFactory(
             self.embedding_dim = 64
 
             ##### Learning Rate Hyperparams #####
-            self.base_lr = 0.075
+            self.base_lr = 0.025
             self.weight_decay = 0.00005
             self.momentum = 0.925
 
@@ -565,7 +558,7 @@ def CommitDiffModelFactory(
             model = tf.keras.Model(inputs=x1, outputs=concatenated_outputs)
 
             # Cosine Decay Learning Schedule - Use this OR Step Decay
-            lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.base_lr * (self.siam_batch_size / self.steps_per_update)/256, self.unsupervised_epochs * (self.unsupervised_data_size / (self.siam_batch_size / self.steps_per_update)))
+            lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.base_lr * (self.siam_batch_size * self.steps_per_update)/256, self.unsupervised_epochs * (self.unsupervised_data_size / (self.siam_batch_size * self.steps_per_update)))
 
             # Step Decay Learning Schedule - Use this OR Cosine Decay
             # # Calculate steps per epoch
@@ -575,7 +568,7 @@ def CommitDiffModelFactory(
             # # Convert epoch boundaries to step boundaries
             # step_boundaries = [epoch_boundary * steps_per_epoch for epoch_boundary in epoch_boundaries]
             # # Define the learning rate values for each step boundary
-            # base_siam_lr = self.base_lr * (self.siam_batch_size / self.steps_per_update)/256
+            # base_siam_lr = self.base_lr * (self.siam_batch_size * self.steps_per_update)/256
             # lr_rates = [base_siam_lr, 0.1 * base_siam_lr, 0.01 * base_siam_lr, 0.001 * base_siam_lr, 0.0001 * base_siam_lr]
             # lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(step_boundaries, lr_rates)
 
@@ -585,10 +578,8 @@ def CommitDiffModelFactory(
 
             model = GradientAccumulateModel(accum_steps=self.steps_per_update, inputs=model.input, outputs=model.output)
 
-            self.temperature_metric = TemperatureMetric()
-
             # Compile the model
-            model.compile(optimizer=optimizer, loss=siamese_loss, run_eagerly=True, metrics=[self.lr_metric, self.temperature_metric])
+            model.compile(optimizer=optimizer, loss=siamese_loss, run_eagerly=True, metrics=[self.lr_metric])
 
             return model
         
@@ -661,7 +652,7 @@ def CommitDiffModelFactory(
         def fit_siam_generator(self, generator, epochs, num_runs=4, run_epochs=8, verbose=0): 
 
             # Instantiate the custom callback
-            sa_weights_callback = SimulatedAnnealingWeights(initial_temp=0.5, anneal_steps=(self.unsupervised_epochs * (self.unsupervised_data_size / (self.siam_batch_size / self.steps_per_update))))
+            sa_weights_callback = SimulatedAnnealingCallback(initial_temperature=0.9)
 
             if num_runs == None:
                 return self.siam_model.fit(generator, epochs=epochs, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model), sa_weights_callback])
