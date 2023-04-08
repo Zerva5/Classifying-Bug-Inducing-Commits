@@ -29,6 +29,65 @@ from tqdm.auto import tqdm
 
 CHECKPOINTS_DIR = 'checkpoints'
 
+
+class AdditionalValidationSets(Callback):
+    def __init__(self, validation_sets, verbose=0, batch_size=None):
+        """
+        :param validation_sets:
+        a list of 3-tuples (validation_data, validation_targets, validation_set_name)
+        or 4-tuples (validation_data, validation_targets, sample_weights, validation_set_name)
+        :param verbose:
+        verbosity mode, 1 or 0
+        :param batch_size:
+        batch size to be used when evaluating on the additional datasets
+        """
+        super(AdditionalValidationSets, self).__init__()
+        self.validation_sets = validation_sets
+        for validation_set in self.validation_sets:
+            if len(validation_set) not in [3, 4]:
+                raise ValueError()
+        self.epoch = []
+        self.history = {}
+        self.verbose = verbose
+        self.batch_size = batch_size
+
+    def on_train_begin(self, logs=None):
+        self.epoch = []
+        self.history = {}
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        self.epoch.append(epoch)
+
+        # record the same values as History() as well
+        for k, v in logs.items():
+            self.history.setdefault(k, []).append(v)
+
+        # evaluate on the additional validation sets
+        for validation_set in self.validation_sets:
+            if len(validation_set) == 3:
+                validation_data, validation_targets, validation_set_name = validation_set
+                sample_weights = None
+            elif len(validation_set) == 4:
+                validation_data, validation_targets, sample_weights, validation_set_name = validation_set
+            else:
+                raise ValueError()
+
+            results = self.model.evaluate(x=validation_data,
+                                          y=validation_targets,
+                                          verbose=self.verbose,
+                                          sample_weight=sample_weights,
+                                          batch_size=self.batch_size)
+
+
+            for metric, result in zip(self.model.metrics_names,results):
+                valuename = validation_set_name + '_' + metric
+
+                if(valuename not in self.history.keys()):
+                    self.history[valuename] = []
+                
+                self.history[valuename].append(result)
+
 class CustomModelCheckpoint(Callback):
     def __init__(self, model):
         super(CustomModelCheckpoint, self).__init__()
@@ -42,6 +101,8 @@ class CustomModelCheckpoint(Callback):
             history = self.model.history.history
             weights = self.model.get_weights()
             filepath = os.path.join(CHECKPOINTS_DIR, f"model_{epoch}.pkl")
+
+
             with open(filepath, 'wb') as f:
                 pickle.dump([history, weights], f)
 
@@ -642,16 +703,27 @@ def CommitDiffModelFactory(
             X_train_message = np.array([tup[2] for tup in X_train])
             X_train_bag1 = np.array([tup[3] for tup in X_train])
             X_train_bag2 = np.array([tup[4] for tup in X_train])
+            
+
+            callbacks = []
+            
 
             if(validation_data is not None):
-                X_test = validation_data[0]
-                y_test = validation_data[1]
-                X_test_name = np.array([tup[0] for tup in X_test])
-                X_test_timestamp = np.array([tup[1] for tup in X_test])
-                X_test_message = np.array([tup[2] for tup in X_test])
-                X_test_bag1 = np.array([tup[3] for tup in X_test])
-                X_test_bag2 = np.array([tup[4] for tup in X_test])
-                val_data = ([X_test_name, X_test_timestamp, X_test_message, X_test_bag1, X_test_bag2],y_test)
+                val_data = []
+                for val in validation_data:
+                    X_test = val[0]
+                    y_test = val[1]
+
+                    X_test_name = np.array([tup[0] for tup in X_test])
+                    X_test_timestamp = np.array([tup[1] for tup in X_test])
+                    X_test_message = np.array([tup[2] for tup in X_test])
+                    X_test_bag1 = np.array([tup[3] for tup in X_test])
+                    X_test_bag2 = np.array([tup[4] for tup in X_test])
+                    val_data.append(([X_test_name, X_test_timestamp, X_test_message, X_test_bag1, X_test_bag2],y_test, val[2]))
+                
+                history = AdditionalValidationSets(validation_sets=val_data)
+                callbacks = [history]
+
             else:
                 val_data = None
 
@@ -661,8 +733,8 @@ def CommitDiffModelFactory(
                 epochs=epochs,
                 batch_size=batch_size,
                 verbose=verbose,
-                validation_data=val_data,
-                use_multiprocessing=True
+                use_multiprocessing=True,
+                callbacks=callbacks
             )
 
         def evaluate_binary_classification(self, X_test, y_test, verbose=0):
