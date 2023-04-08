@@ -34,6 +34,8 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
     def __init__(self, initial_temperature):
         super(SimulatedAnnealingCallback, self).__init__()
         self.temperature = initial_temperature
+        self.interval = 16
+        self.persistance = 4
         self.old_weights = None
         self.old_loss = None
 
@@ -41,14 +43,14 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
         self.temperatures = []
 
     def on_epoch_end(self, epoch, logs=None):
-        if epoch % 4 == 0 and epoch > 2:
+        if epoch % self.interval == 0 and epoch > self.persistance:
             self.old_weights = self.model.get_weights()
             self.old_loss = logs["loss"]
-            mean = self.temperature / 5
+            mean = self.temperature / 10
             random_weights = [w + np.random.normal(loc=0, scale=mean, size=w.shape) for w in self.old_weights]
             self.model.set_weights(random_weights)
 
-        if epoch % 4 == 2 and epoch > 2:
+        if epoch % self.interval == self.persistance and epoch > self.persistance:
             new_loss = logs["loss"]
 
             delta_loss = new_loss - self.old_loss
@@ -69,10 +71,10 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
             logs["temperature"] = self.temperature
 
     def cooling_schedule(self, temperature, epoch):
-        return temperature * 0.95
+        return temperature * (0.995**self.interval)
 
     def acceptance_func(self, delta_loss, temperature):
-        return np.exp(-delta_loss / temperature)
+        return np.exp(-delta_loss / temperature) - 0.2
 
 
 
@@ -670,7 +672,7 @@ def CommitDiffModelFactory(
                 self.siam_model.set_weights(initial_weights)
 
                 # Train the model for a fixed number of epochs
-                history = self.siam_model.fit(generator, epochs=run_epochs, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model), sa_weights_callback])
+                history = self.siam_model.fit(generator, epochs=run_epochs, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model)])
 
                 # Retrieve the loss value from the last epoch
                 metric_value = history.history['loss'][-1]
