@@ -5,6 +5,27 @@ from Commit import CommitFactory
 Commit = CommitFactory()
 import gc
 
+### Render a dataset from a CSV file
+def render_dataset(csv_file, BAG_SIZE = 256, CONTEXT_SIZE = 16, max_commits = None, max_commit_bag_size = None, verbose = True):
+    print("Starting to render dataset")
+
+    ## The csv columns we care about are: fix_hash, bug_hash, fix_index, bug_index
+    ## The commit data is stored in pickles in the commit_lookups directory and are titles: commit_data_lookup{start_index}-{end_index}.pickle
+    ## The commit data is stored in a dictionary with the key being the commit hash and the value being the commit array (I think)
+
+    # load the csv file
+    df = pd.read_csv(csv_file)
+
+    # get the start and end indices of the commits
+    start_index = df['fix_index'].min()
+    end_index = df['bug_index'].max()
+
+    # load the commit lookup table
+    
+
+    sleep(10)
+
+
 #TODO: Make this process more efficient @lucas
 def load_commit_lookup(pickle_dir = '../data/commit_lookups/labelled', verbose = True, max_commits = None, max_commit_bag_size = None):
 
