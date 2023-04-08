@@ -44,7 +44,8 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
         if epoch % 4 == 0 and epoch > 2:
             self.old_weights = self.model.get_weights()
             self.old_loss = logs["loss"]
-            random_weights = [w + np.random.normal(loc=0, scale=self.temperature, size=w.shape) for w in self.old_weights]
+            mean = self.temperature / 5
+            random_weights = [w + np.random.normal(loc=0, scale=mean, size=w.shape) for w in self.old_weights]
             self.model.set_weights(random_weights)
 
         if epoch % 4 == 2 and epoch > 2:
@@ -652,7 +653,7 @@ def CommitDiffModelFactory(
         def fit_siam_generator(self, generator, epochs, num_runs=4, run_epochs=8, verbose=0): 
 
             # Instantiate the custom callback
-            sa_weights_callback = SimulatedAnnealingCallback(initial_temperature=0.9)
+            sa_weights_callback = SimulatedAnnealingCallback(initial_temperature=0.25)
 
             if num_runs == None:
                 return self.siam_model.fit(generator, epochs=epochs, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model), sa_weights_callback])
