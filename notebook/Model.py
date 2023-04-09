@@ -31,11 +31,11 @@ CHECKPOINTS_DIR = 'checkpoints'
 
 
 class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
-    def __init__(self, initial_temperature):
+    def __init__(self):
         super(SimulatedAnnealingCallback, self).__init__()
-        self.temperature = initial_temperature
+        self.temperature = 0.5
         self.interval = 16
-        self.persistance = 4
+        self.persistance = 6
         self.old_weights = None
         self.old_loss = None
 
@@ -80,7 +80,7 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
         return temperature * 0.995
 
     def acceptance_func(self, delta_loss, temperature):
-        return np.exp(50 * -delta_loss / temperature) - 0.2
+        return np.exp(50 * -delta_loss / temperature)
 
 
 
@@ -89,16 +89,22 @@ class CustomModelCheckpoint(Callback):
         super(CustomModelCheckpoint, self).__init__()
         self.model = model
         self.save_dir = CHECKPOINTS_DIR
-        self.save_freq = 1
+        self.save_freq = 32
         os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
+
+    def save(self, epoch):
+        history = self.model.history.history
+        weights = self.model.get_weights()
+        filepath = os.path.join(CHECKPOINTS_DIR, f"model_{epoch}.pkl")
+        with open(filepath, 'wb') as f:
+            pickle.dump([history, weights], f)
 
     def on_epoch_end(self, epoch, logs=None):
         if epoch % self.save_freq == 0:
-            history = self.model.history.history
-            weights = self.model.get_weights()
-            filepath = os.path.join(CHECKPOINTS_DIR, f"model_{epoch}.pkl")
-            with open(filepath, 'wb') as f:
-                pickle.dump([history, weights], f)
+            self.save(epoch)
+
+    def on_train_end(self, logs=None):
+        self.save("final")
 
 def get_lr_metric(optimizer):
     def lr(y_true, y_pred):
@@ -660,7 +666,7 @@ def CommitDiffModelFactory(
         def fit_siam_generator(self, generator, epochs, num_runs=4, run_epochs=8, verbose=0): 
 
             # Instantiate the custom callback
-            sa_weights_callback = SimulatedAnnealingCallback(initial_temperature=0.25)
+            sa_weights_callback = SimulatedAnnealingCallback()
 
             if num_runs == None:
                 return self.siam_model.fit(generator, epochs=epochs, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model), sa_weights_callback])
