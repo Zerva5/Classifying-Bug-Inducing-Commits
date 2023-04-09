@@ -376,14 +376,18 @@ def createNegativeExamples(pairs, searchPairs, maxNegatives):
     - pd.DataFrame: A Pandas DataFrame with columns fix_hash, bug_hash, and Y label.
     """
 
-    maxHops = 30
+    ## for broad examples
+    #maxHops = 30
+    #tolerance = 1
+    maxHops = 3
+    tolerance = 1
     
     negList = []
     #print("generating random from same repo")
     #negList.append(negativeRandomSameRepo(pairs, searchPairs, maxNegatives))
     # print("generating negative using other fixes from the same repo")
     # negList.append(negativeDifferentFixSameRepo(pairs, maxNegatives))
-    negList.append(negativeCloseToFix(pairs, maxHops, maxNegatives, file_tolerance=3))
+    negList.append(negativeCloseToFix(pairs, maxHops, maxNegatives, file_tolerance=tolerance))
         
     df = pd.concat(negList)
     df['Y'] = 0
@@ -479,7 +483,7 @@ def main():
     posPairs = getPositivePairs(rootPath)
 
     print("Loading all apache commits")
-    all_apache_commits = getCommitLookup(rootPath, maxFiles=8, maxDiffLines=80)
+    all_apache_commits = getCommitLookup(rootPath, maxFiles=8, maxDiffLines=50)
     searchPairs = all_apache_commits
     all_apache_commits = all_apache_commits.set_index('sha')
     
@@ -493,12 +497,13 @@ def main():
     #posPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_positive_pairs2.csv"))
 
 
+
     print("generating negative pairs")
 
     negPairs = createNegativeExamples(posPairs, searchPairs, numNegatives)
     negPairs = fixPickleIndex(negPairs, all_apache_commits)
 
-    negPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_close_broad_negative_pairs.csv"), index=False)
+    negPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_close_strict_negative_pairs.csv"), index=False)
 
 
     #print("negative examples:", withNegative.shape[0] - posPairs.shape[0])
