@@ -52,7 +52,7 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
         if epoch % self.interval <= self.persistance and epoch > self.persistance:
             logs["annealing_delta"] = logs["loss"] - self.old_loss
         else:
-            logs["annealing_delta"] = None
+            logs["annealing_delta"] = 0
 
         if epoch % self.interval == self.persistance and epoch > self.persistance:
             new_loss = logs["loss"]
@@ -68,7 +68,7 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
                 # Revert to old weights
                 self.model.set_weights(self.old_weights)
         else:
-            logs["acceptance_value"] = None
+            logs["acceptance_value"] = 0
 
         # Update the temperature based on the cooling schedule
         self.temperature = self.cooling_schedule(self.temperature, epoch)
@@ -272,7 +272,6 @@ def CommitDiffModelFactory(
             self.kernel_size = 3
             #################################################################
             
-            self.encoder = None
             self.siam_model = None
             self.binary_classification_model = None
 
