@@ -45,7 +45,7 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
             self.old_weights = self.model.get_weights()
             self.old_loss = logs["loss"]
             # mean = self.temperature / 10
-            mean = 0.25
+            mean = 0.03
             random_weights = [w + np.random.normal(loc=0, scale=mean, size=w.shape) for w in self.old_weights]
             self.model.set_weights(random_weights)
 
