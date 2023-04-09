@@ -44,7 +44,8 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
         if epoch % self.interval == 0 and epoch > self.persistance:
             self.old_weights = self.model.get_weights()
             self.old_loss = logs["loss"]
-            mean = self.temperature / 10
+            # mean = self.temperature / 10
+            mean = 0.25
             random_weights = [w + np.random.normal(loc=0, scale=mean, size=w.shape) for w in self.old_weights]
             self.model.set_weights(random_weights)
 
@@ -58,6 +59,7 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
 
             delta_loss = new_loss - self.old_loss
             acceptance_value = self.acceptance_func(delta_loss, self.temperature)
+            logs["acceptance_value"] = acceptance_value
 
             if delta_loss < 0 or np.random.rand() < acceptance_value:
                 # Keep the new weights
@@ -76,7 +78,7 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
         return temperature * 0.995
 
     def acceptance_func(self, delta_loss, temperature):
-        return np.exp(-delta_loss / temperature) - 0.2
+        return np.exp(50 * -delta_loss / temperature) - 0.2
 
 
 
