@@ -73,18 +73,19 @@ class AdditionalValidationSets(Callback):
   
 
 class CustomModelCheckpoint(Callback):
-    def __init__(self, model):
+    def __init__(self, model, prefix="model", save_freq=1):
         super(CustomModelCheckpoint, self).__init__()
         self.model = model
         self.save_dir = CHECKPOINTS_DIR
-        self.save_freq = 1
+        self.save_freq = save_freq
         os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
+        self.prefix=prefix
 
     def on_epoch_end(self, epoch, logs=None):
         if epoch % self.save_freq == 0:
             history = self.model.history.history
             weights = self.model.get_weights()
-            filepath = os.path.join(CHECKPOINTS_DIR, f"model_{epoch}.pkl")
+            filepath = os.path.join(CHECKPOINTS_DIR, f"{self.prefix}_{epoch}.pkl")
 
 
             with open(filepath, 'wb') as f:
@@ -678,9 +679,9 @@ def CommitDiffModelFactory(
             self.siam_model.set_weights(best_weights)
 
             # Train the model for the remaining epochs
-            return self.siam_model.fit(generator, epochs=(epochs - run_epochs), verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model)])
+            return self.siam_model.fit(generator, epochs=(epochs - run_epochs), verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model, "siam")])
 
-        def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0, validation_data=None):
+        def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0, validation_data=None, save_checkpoints=False, memory_callbacks=True):
 
             X_train_name = np.array([tup[0] for tup in X_train])
             X_train_timestamp = np.array([tup[1] for tup in X_train])
@@ -690,6 +691,13 @@ def CommitDiffModelFactory(
             
 
             callbacks = []
+
+            if(memory_callbacks):
+                callbacks.append(ClearMemory())
+            
+            if save_checkpoints:
+                checkpoint_callback = CustomModelCheckpoint(self.binary_classification_model, prefix="bin", save_freq=10)
+                callbacks.append(checkpoint_callback)
             
 
             if(validation_data is not None):

@@ -7,6 +7,7 @@ import random
 from typing import Optional
 import cProfile
 from tqdm import tqdm
+from multiprocessing import Pool, cpu_count
 
 def getCommitLookup(rootPath: str, maxFiles: int|None = None, maxDiffLines: int|None = None):
     """
@@ -269,32 +270,14 @@ def negativeDifferentFixSameRepo(pairs, n):
 
 _NoCloseCommitsFound = 0
 _TotalCloseCommits = 0
-def negativeCloseToFix(pairs, max_hops, n, file_tolerance = 1):
-
-    """Returns a new DataFrame with negative examples where the bug is a commit before or after the true bug in the same repository."""
-
-    newRowDFs = []
-
-    # for each pair, load the commit for the bug causing commit
-    # A random commit at most max_hops commits away from the bug causing commit
-
-    repoStrings = pairs['fix_repo'].unique()
-    repoDict = {}
-    for r in repoStrings:
-        try:
-            repoDict[r] = git.Repo(os.path.join("clones", r.replace('/', '-')))
-            
-        except:
-            raise Exception("should not have any repos that are not cloned")
-
-    def get_negative_examples(row, pairs, max_hops, n, min_hops=0):
+def get_negative_examples_close_to_fix_helper(fix_hash, fix_repo, bug_hash, fix_index, repoDict, max_hops, n, min_hops=0, file_tolerance=0):
         newRows = []
         tempn = n
 
-        i_fixHash = row.fix_hash
-        i_repo = row.fix_repo
-        i_bugHash = row.bug_hash
-        i_fixIndex = row.fix_index
+        i_fixHash = fix_hash
+        i_repo = fix_repo
+        i_bugHash = bug_hash
+        i_fixIndex = fix_index
 
         ## load repo into repo object
         repo = repoDict[i_repo]
@@ -343,14 +326,40 @@ def negativeCloseToFix(pairs, max_hops, n, file_tolerance = 1):
 
         # create a new row for each commit
         for c in closeCommits:
-            newRows.append({'fix_hash': i_fixHash, 'bug_hash': c, 'fix_repo': i_repo, 'bug_repo': i_repo, 'fix_index': i_fixIndex, 'bug_index': repo.commit(c).committed_date})
+            newRows.append({'fix_hash': i_fixHash, 'bug_hash': c, 'fix_repo': i_repo, 'bug_repo': i_repo})
 
 
         #print(newRows)
+        print("Finished row, no close commits: {}, total close commits: {}".format(_NoCloseCommitsFound, _TotalCloseCommits))
         return pd.DataFrame(newRows)
 
-    for p in tqdm(pairs.itertuples(), total=len(pairs)):
-        newRowDFs.append(get_negative_examples(p, pairs, max_hops, n))
+def negativeCloseToFix(pairs, max_hops, n, file_tolerance = 1):
+
+    """Returns a new DataFrame with negative examples where the bug is a commit before or after the true bug in the same repository."""
+
+    newRowDFs = []
+
+    # for each pair, load the commit for the bug causing commit
+    # A random commit at most max_hops commits away from the bug causing commit
+
+    repoStrings = pairs['fix_repo'].unique()
+    repoDict = {}
+    for r in repoStrings:
+        try:
+            repoDict[r] = git.Repo(os.path.join("clones", r.replace('/', '-')))
+            
+        except:
+            raise Exception("should not have any repos that are not cloned")
+
+
+    ## Multiprocessing stuff
+    args = [(row.fix_hash, row.fix_repo, row.bug_hash, row.fix_index, repoDict, max_hops, n, file_tolerance) for row in pairs.itertuples()]
+
+    with Pool(cpu_count()) as p:
+        newRowDFs = p.starmap(get_negative_examples_close_to_fix_helper, args)
+
+    #for p in tqdm(pairs.itertuples(), total=len(pairs)):
+        #newRowDFs.append(get_negative_examples(p, pairs, max_hops, n))
 
 
     print("Number of new rows: {}".format(len(newRowDFs[-1])))
@@ -377,10 +386,10 @@ def createNegativeExamples(pairs, searchPairs, maxNegatives):
     """
 
     ## for broad examples
-    #maxHops = 30
+    maxHops = 30
+    tolerance = 3
+    #maxHops = 3
     #tolerance = 1
-    maxHops = 3
-    tolerance = 1
     
     negList = []
     #print("generating random from same repo")
@@ -428,6 +437,8 @@ def getPositivePairs(rootPath,  numSamples: Optional[int] = None):
             
         except:
             repoBlacklist.append(r)
+    
+
 
     # Don't include repos that aren't clones
     df = df[~df['repo'].isin(repoBlacklist)]
@@ -503,7 +514,7 @@ def main():
     negPairs = createNegativeExamples(posPairs, searchPairs, numNegatives)
     negPairs = fixPickleIndex(negPairs, all_apache_commits)
 
-    negPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_close_strict_negative_pairs.csv"), index=False)
+    negPairs.to_csv(os.path.join(rootPath, "pairs_output", "apache_close_broad_negative_pairs.csv"), index=False)
 
 
     #print("negative examples:", withNegative.shape[0] - posPairs.shape[0])
