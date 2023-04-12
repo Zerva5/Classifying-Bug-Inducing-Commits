@@ -2,6 +2,7 @@ import numpy as np
 import os
 import gc
 import pickle
+import math
 
 #Disable import warnings for tensorflow
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -71,13 +72,21 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
             logs["acceptance_value"] = 0
 
         # Update the temperature based on the cooling schedule
-        self.temperature = self.cooling_schedule(self.temperature, epoch)
-
+        #self.temperature = self.cooling_schedule(self.temperature, epoch)
+        if self.old_loss is None:
+            self.old_loss = logs["loss"]
+        self.temperature = self.temperature_from_loss(self.old_loss)
         # Add the temperature to the logs dictionary
         logs["temperature"] = self.temperature
 
     def cooling_schedule(self, temperature, epoch):
         return temperature * 0.995
+    
+    def temperature_from_loss(self, loss):
+        k = 10  # Steepness of the sigmoid curve
+        a = 0.45  # Position of the sigmoid curve along the x-axis
+        x = loss + a  # Shift the input to match the desired range
+        return 1 / (1 + math.exp(-k * x))
 
     def acceptance_func(self, delta_loss, temperature):
         return np.exp(50 * -delta_loss / temperature)
