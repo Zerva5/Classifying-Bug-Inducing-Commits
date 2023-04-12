@@ -1,9 +1,15 @@
 import os
+import tensorflow as tf
+# from dataset import raw_to_padded
 import pickle
 from tqdm.auto import tqdm
 from Commit import CommitFactory
 Commit = CommitFactory()
 import gc
+import re
+import pandas as pd
+import numpy as np
+from process_metadata import processNames, processTimestamps, processCommitMessages
 
 #TODO: Make this process more efficient @lucas
 def load_commit_lookup(pickle_dir = '../data/commit_lookups/labelled', verbose = True, max_commits = None, max_commit_bag_size = None):

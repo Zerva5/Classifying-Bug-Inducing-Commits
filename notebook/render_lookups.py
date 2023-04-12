@@ -129,13 +129,36 @@ def get_rendered_examples(balance=False, input_dir='../data/commit_lookups/rende
     X_test = []
     y_train = []
     y_test = []
+    X = []
+    y = []
+
     for filename in os.listdir(input_dir):
         with open(os.path.join(input_dir, filename), 'rb') as f_in:
             data = pickle.load(f_in)
-            X_train.extend(data[0])
-            X_test.extend(data[1])
-            y_train.extend(data[2])
-            y_test.extend(data[3])
+            if(len(data) == 4):
+                print("len 4")
+                #print((data[0][1][3]))
+                X.extend(data[0])
+                X.extend(data[1])
+                y.extend(data[2])
+                y.extend(data[3])
+            elif(len(data) == 2):
+                print("len 2")
+                #print((data[0][1][3]))
+                X.extend(data[0])
+                y.extend(data[1])
+                #X_train.extend(data[0][0])
+                #y_train.extend(data[1])
+        
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+
+    #print([tup[0] for tup in X_train[:10]])
+    #print(X_train[1])
+    #print(X_test[1])
+
+            
     
     if(balance):
         #This would be undersampling / downsampling:
@@ -148,3 +171,14 @@ def get_rendered_examples(balance=False, input_dir='../data/commit_lookups/rende
 
 
     return X_train, X_test, y_train, y_test
+
+
+def test():
+    X_train, X_test, y_train, y_test = get_rendered_examples(balance=True) #You can also set balance=True (!)
+    X_test_1 = [X_test[i] for i in range(len(X_test)) if y_test[i] == 1]
+    y_test_1 = [y_test[i] for i in range(len(X_test)) if y_test[i] == 1]
+    X_test_0 = [X_test[i] for i in range(len(X_test)) if y_test[i] == 0]
+    y_test_0 = [y_test[i] for i in range(len(X_test)) if y_test[i] == 0]
+
+
+#test()

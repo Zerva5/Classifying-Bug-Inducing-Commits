@@ -84,18 +84,62 @@ class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
 
 
 
+
+class AdditionalValidationSets(Callback):
+    def __init__(self, validation_sets, verbose=0):
+
+        super(AdditionalValidationSets, self).__init__()
+
+        self.validation_sets = validation_sets
+
+        if(len(self.validation_sets) == 0):
+            raise ValueError("No validation sets provided")
+        elif (len(self.validation_sets[0]) != 3):
+            raise ValueError("Validation sets must be a list of tuples (name, x, y)")
+
+        self.validation_results = {}
+
+        for name, x, y in self.validation_sets:
+            if (x is None or y is None):
+                raise ValueError("Validation set x and y must not be None")
+            if(name in self.validation_results.keys()):
+                raise ValueError("Validation set names must be unique")
+
+            self.validation_results[name] = {}
+
+        self.verbose = verbose 
+
+    def on_train_begin(self, logs=None):
+        ## initialize validation results to be a dictionary of validation set names 
+        self.validation_results = {name: {} for name in self.validation_results.keys()}
+
+
+    def on_epoch_end(self, epoch, logs=None):
+        
+        for name, x, y in self.validation_sets:
+            results = self.model.evaluate(x, y, verbose=0)
+
+            for metric, result in zip(self.model.metrics_names, results):
+                logs[f'{name}_{metric}'] = result
+    
+
+
+
+  
+
 class CustomModelCheckpoint(Callback):
-    def __init__(self, model):
+    def __init__(self, model, prefix="model", save_freq=1):
         super(CustomModelCheckpoint, self).__init__()
         self.model = model
         self.save_dir = CHECKPOINTS_DIR
-        self.save_freq = 32
+        self.save_freq = save_freq
         os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
+        self.prefix=prefix
 
     def save(self, epoch):
         history = self.model.history.history
         weights = self.model.get_weights()
-        filepath = os.path.join(CHECKPOINTS_DIR, f"model_{epoch}.pkl")
+        filepath = os.path.join(CHECKPOINTS_DIR, f"{self.prefix}_{epoch}.pkl")
         with open(filepath, 'wb') as f:
             pickle.dump([history, weights], f)
 
@@ -605,7 +649,7 @@ def CommitDiffModelFactory(
 
             print("Loaded saved file")
             print("Running single fit() epoch to intialize model weights")
-            self.siam_model.fit(generator, epochs=1, verbose=1, use_multiprocessing=True, callbacks=ClearMemory())
+            self.siam_model.fit(generator.take(1), epochs=1, verbose=1, use_multiprocessing=True, callbacks=ClearMemory())
             print("Resetting States")
 
             self.siam_model.reset_states()
@@ -696,25 +740,43 @@ def CommitDiffModelFactory(
             self.siam_model.set_weights(best_weights)
 
             # Train the model for the remaining epochs
-            return self.siam_model.fit(generator, epochs=(epochs - run_epochs), verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model), sa_weights_callback])
+            return self.siam_model.fit(generator, epochs=(epochs - run_epochs), verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model, "siam"), sa_weights_callback])
 
-        def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0, validation_data=None):
+        def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0, validation_data=None, save_checkpoints=False, memory_callbacks=True):
 
             X_train_name = np.array([tup[0] for tup in X_train])
             X_train_timestamp = np.array([tup[1] for tup in X_train])
             X_train_message = np.array([tup[2] for tup in X_train])
             X_train_bag1 = np.array([tup[3] for tup in X_train])
             X_train_bag2 = np.array([tup[4] for tup in X_train])
+            
+
+            callbacks = []
+
+            if(memory_callbacks):
+                callbacks.append(ClearMemory())
+            
+            if save_checkpoints:
+                checkpoint_callback = CustomModelCheckpoint(self.binary_classification_model, prefix="bin", save_freq=10)
+                callbacks.append(checkpoint_callback)
+            
 
             if(validation_data is not None):
-                X_test = validation_data[0]
-                y_test = validation_data[1]
-                X_test_name = np.array([tup[0] for tup in X_test])
-                X_test_timestamp = np.array([tup[1] for tup in X_test])
-                X_test_message = np.array([tup[2] for tup in X_test])
-                X_test_bag1 = np.array([tup[3] for tup in X_test])
-                X_test_bag2 = np.array([tup[4] for tup in X_test])
-                val_data = ([X_test_name, X_test_timestamp, X_test_message, X_test_bag1, X_test_bag2],y_test)
+                val_data = []
+                for val in validation_data:
+                    X_test = val[1]
+                    y_test = val[2]
+
+                    X_test_name = np.array([tup[0] for tup in X_test])
+                    X_test_timestamp = np.array([tup[1] for tup in X_test])
+                    X_test_message = np.array([tup[2] for tup in X_test])
+                    X_test_bag1 = np.array([tup[3] for tup in X_test])
+                    X_test_bag2 = np.array([tup[4] for tup in X_test])
+                    val_data.append((val[0], [X_test_name, X_test_timestamp, X_test_message, X_test_bag1, X_test_bag2],y_test))
+                
+                validation_callback = AdditionalValidationSets(validation_sets=val_data)
+                callbacks.append(validation_callback)
+
             else:
                 val_data = None
 
@@ -724,8 +786,8 @@ def CommitDiffModelFactory(
                 epochs=epochs,
                 batch_size=batch_size,
                 verbose=verbose,
-                validation_data=val_data,
-                use_multiprocessing=True
+                use_multiprocessing=True,
+                callbacks=callbacks
             )
 
         def evaluate_binary_classification(self, X_test, y_test, verbose=0):
