@@ -22,6 +22,8 @@ Commit = CommitFactory()
 #############################
 POSITIVE_CSV_FILE = "./apache_positive_pairs.csv"
 NEGATIVE_CSV_FILE = "./apache_negative_pairs.csv"
+#POSITIVE_CSV_FILE = "./icse_java_positive_pairs.csv"
+#NEGATIVE_CSV_FILE = "./icse_java_negative_pairs.csv"
 #############################
 
 global COMMIT_LOOKUP
@@ -151,6 +153,9 @@ def get_labelled_data(file, BAG_SIZE=256, CONTEXT_SIZE=16, sliceS = None, sliceE
     # Use multiprocessing to parallelize the list comprehension
     with mp.Pool(processes=mp.cpu_count()) as pool:
         results = list(tqdm(pool.imap_unordered(row_to_example_helper, args), total=len(args), desc=f"Generating {file.split('/')[-1].split('.')[0]} X_train and y_train"))
+    
+    print(results[0][0])
+    print(results[0][1])
 
     X_train, y_train = zip(*results)
     return list(X_train), list(y_train)
