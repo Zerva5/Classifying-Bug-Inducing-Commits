@@ -5,7 +5,6 @@
 
 *.csv
 !all_pairs.csv
-!notebook/*.csv
 
 data_scripts/gh_access_token.txt
 **/__pycache__
@@ -13,3 +12,9 @@ clones/
 gh_access_token.txt
 
 notebook/checkpoints/
+notebook/.ipynb_checkpoints/
+data/
+notebook/unsupervised_cache.data-*
+notebook/unsupervised_cache.index
+*.pkl
+*.png

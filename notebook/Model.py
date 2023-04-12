@@ -30,6 +30,61 @@ from tqdm.auto import tqdm
 CHECKPOINTS_DIR = 'checkpoints'
 
 
+class SimulatedAnnealingCallback(tf.keras.callbacks.Callback):
+    def __init__(self, initial_temperature):
+        super(SimulatedAnnealingCallback, self).__init__()
+        self.temperature = initial_temperature
+        self.interval = 16
+        self.persistance = 4
+        self.old_weights = None
+        self.old_loss = None
+
+    def on_epoch_end(self, epoch, logs={}):
+
+        if epoch % self.interval == 0 and epoch > self.persistance:
+            self.old_weights = self.model.get_weights()
+            self.old_loss = logs["loss"]
+            # mean = self.temperature / 10
+            mean = 0.03
+            random_weights = [w + np.random.normal(loc=0, scale=mean, size=w.shape) for w in self.old_weights]
+            self.model.set_weights(random_weights)
+
+        if epoch % self.interval <= self.persistance and epoch > self.persistance:
+            logs["annealing_delta"] = logs["loss"] - self.old_loss
+        else:
+            logs["annealing_delta"] = 0
+
+        if epoch % self.interval == self.persistance and epoch > self.persistance:
+            new_loss = logs["loss"]
+
+            delta_loss = new_loss - self.old_loss
+            acceptance_value = self.acceptance_func(delta_loss, self.temperature)
+            logs["acceptance_value"] = acceptance_value
+
+            if delta_loss < 0 or np.random.rand() < acceptance_value:
+                # Keep the new weights
+                pass
+            else:
+                # Revert to old weights
+                self.model.set_weights(self.old_weights)
+        else:
+            logs["acceptance_value"] = 0
+
+        # Update the temperature based on the cooling schedule
+        self.temperature = self.cooling_schedule(self.temperature, epoch)
+
+        # Add the temperature to the logs dictionary
+        logs["temperature"] = self.temperature
+
+    def cooling_schedule(self, temperature, epoch):
+        return temperature * 0.995
+
+    def acceptance_func(self, delta_loss, temperature):
+        return np.exp(50 * -delta_loss / temperature) - 0.2
+
+
+
+
 class AdditionalValidationSets(Callback):
     def __init__(self, validation_sets, verbose=0):
 
@@ -242,7 +297,7 @@ def CommitDiffModelFactory(
             self.embedding_dim = 64
 
             ##### Learning Rate Hyperparams #####
-            self.base_lr = 0.075
+            self.base_lr = 0.035
             self.weight_decay = 0.00005
             self.momentum = 0.925
 
@@ -263,7 +318,6 @@ def CommitDiffModelFactory(
             self.kernel_size = 3
             #################################################################
             
-            self.encoder = None
             self.siam_model = None
             self.binary_classification_model = None
 
@@ -558,8 +612,8 @@ def CommitDiffModelFactory(
             model = tf.keras.Model(inputs=x1, outputs=concatenated_outputs)
 
             # Cosine Decay Learning Schedule - Use this OR Step Decay
-            lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.base_lr * (self.siam_batch_size / self.steps_per_update)/256, self.unsupervised_epochs * (self.unsupervised_data_size / (self.siam_batch_size / self.steps_per_update)))
-            
+            lr_schedule = tf.keras.optimizers.schedules.CosineDecay(self.base_lr * (self.siam_batch_size * self.steps_per_update)/256, self.unsupervised_epochs * (self.unsupervised_data_size / (self.siam_batch_size * self.steps_per_update)))
+
             # Step Decay Learning Schedule - Use this OR Cosine Decay
             # # Calculate steps per epoch
             # steps_per_epoch = self.unsupervised_data_size // self.siam_batch_size
@@ -568,7 +622,7 @@ def CommitDiffModelFactory(
             # # Convert epoch boundaries to step boundaries
             # step_boundaries = [epoch_boundary * steps_per_epoch for epoch_boundary in epoch_boundaries]
             # # Define the learning rate values for each step boundary
-            # base_siam_lr = self.base_lr * (self.siam_batch_size / self.steps_per_update)/256
+            # base_siam_lr = self.base_lr * (self.siam_batch_size * self.steps_per_update)/256
             # lr_rates = [base_siam_lr, 0.1 * base_siam_lr, 0.01 * base_siam_lr, 0.001 * base_siam_lr, 0.0001 * base_siam_lr]
             # lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(step_boundaries, lr_rates)
 
@@ -650,9 +704,12 @@ def CommitDiffModelFactory(
             return self.siam_model.fit(X_train, X_train, epochs=epochs, batch_size=self.siam_batch_size, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model)])
 
         def fit_siam_generator(self, generator, epochs, num_runs=4, run_epochs=8, verbose=0): 
-        
+
+            # Instantiate the custom callback
+            sa_weights_callback = SimulatedAnnealingCallback(initial_temperature=0.25)
+
             if num_runs == None:
-                return self.siam_model.fit(generator, epochs=epochs, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model)])
+                return self.siam_model.fit(generator, epochs=epochs, verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model), sa_weights_callback])
 
 
             # Define a list to store the best weights obtained during training
@@ -679,7 +736,7 @@ def CommitDiffModelFactory(
             self.siam_model.set_weights(best_weights)
 
             # Train the model for the remaining epochs
-            return self.siam_model.fit(generator, epochs=(epochs - run_epochs), verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model, "siam")])
+            return self.siam_model.fit(generator, epochs=(epochs - run_epochs), verbose=verbose, use_multiprocessing=True, callbacks=[ClearMemory(), CustomModelCheckpoint(self.siam_model, "siam"), sa_weights_callback])
 
         def fit_binary_classification(self, X_train, y_train, epochs, batch_size, verbose=0, validation_data=None, save_checkpoints=False, memory_callbacks=True):
 
