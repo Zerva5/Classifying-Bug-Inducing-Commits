@@ -5,7 +5,7 @@
 # - Labelled Negatives array
 ##################################
 
-from load_lookups import load_commit_lookup
+#from load_lookups import load_commit_lookup
 from process_metadata import processNames, processTimestamps, processCommitMessages
 from tqdm.auto import tqdm
 import random
